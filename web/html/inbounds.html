@@ -1413,7 +1413,7 @@
               }
             }, options.map(opt => h('a-select-option', { props: { value: opt.value } }, opt.label))),
             h('p', { style: { marginTop: '10px', color: '#888', fontSize: '12px' } },
-              'Existing emails will be skipped. Same UUID/password will be used.')
+              'Emails will be prefixed with target port (e.g. "2053_user"). Existing global emails will be skipped.')
           ]),
           okText: 'Sync',
           cancelText: '{{ i18n "cancel"}}',
