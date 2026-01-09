@@ -1420,7 +1420,7 @@
           onOk: async () => {
             this.loading(true);
             try {
-              const result = await HttpUtil.postJson('/panel/api/inbounds/syncClients', {
+              const result = await HttpUtil.post('/panel/api/inbounds/syncClients', {
                 targetId: targetId,
                 sourceId: selectedSourceId
               });
