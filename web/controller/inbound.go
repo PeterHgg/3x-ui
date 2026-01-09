@@ -51,6 +51,8 @@ func (a *InboundController) initRouter(g *gin.RouterGroup) {
 	g.POST("/lastOnline", a.lastOnline)
 	g.POST("/updateClientTraffic/:email", a.updateClientTraffic)
 	g.POST("/:id/delClientByEmail/:email", a.delInboundClientByEmail)
+	g.GET("/listByProtocol", a.listByProtocol)
+	g.POST("/syncClients", a.syncClients)
 }
 
 // getInbounds retrieves the list of inbounds for the logged-in user.
@@ -421,4 +423,49 @@ func (a *InboundController) delInboundClientByEmail(c *gin.Context) {
 	if needRestart {
 		a.xrayService.SetToNeedRestart()
 	}
+}
+
+// listByProtocol retrieves inbounds filtered by protocol.
+// Used for the sync clients feature to show only same-protocol inbounds.
+func (a *InboundController) listByProtocol(c *gin.Context) {
+	protocol := c.Query("protocol")
+	if protocol == "" {
+		jsonMsg(c, "Protocol is required", fmt.Errorf("protocol query parameter is required"))
+		return
+	}
+
+	inbounds, err := a.inboundService.GetInboundsByProtocol(protocol)
+	if err != nil {
+		jsonMsg(c, "Failed to get inbounds", err)
+		return
+	}
+	jsonObj(c, inbounds, nil)
+}
+
+// syncClients syncs clients from one inbound to another.
+// Only works between inbounds with the same protocol.
+func (a *InboundController) syncClients(c *gin.Context) {
+	type SyncRequest struct {
+		TargetId int `json:"targetId"`
+		SourceId int `json:"sourceId"`
+	}
+
+	var request SyncRequest
+	err := c.ShouldBindJSON(&request)
+	if err != nil {
+		jsonMsg(c, "Invalid request", err)
+		return
+	}
+
+	addedCount, skippedEmails, err := a.inboundService.SyncClientsFromInbound(request.TargetId, request.SourceId)
+	if err != nil {
+		jsonMsg(c, "Failed to sync clients", err)
+		return
+	}
+
+	result := map[string]any{
+		"addedCount":    addedCount,
+		"skippedEmails": skippedEmails,
+	}
+	jsonObj(c, result, nil)
 }

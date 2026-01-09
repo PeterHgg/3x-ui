@@ -2471,3 +2471,195 @@ func (s *InboundService) DelInboundClientByEmail(inboundId int, email string) (b
 
 	return needRestart, db.Save(oldInbound).Error
 }
+
+// GetInboundsByProtocol retrieves all inbounds with a specific protocol.
+// Used for user sync feature - only allows syncing between same protocol inbounds.
+func (s *InboundService) GetInboundsByProtocol(protocol string) ([]*model.Inbound, error) {
+	db := database.GetDB()
+	var inbounds []*model.Inbound
+	err := db.Model(model.Inbound{}).Where("protocol = ?", protocol).Find(&inbounds).Error
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return nil, err
+	}
+	return inbounds, nil
+}
+
+// SyncClientsFromInbound copies clients from source inbound to target inbound.
+// It skips clients whose email already exists in the target inbound.
+// Returns the number of added clients, list of skipped emails, and any error.
+func (s *InboundService) SyncClientsFromInbound(targetId, sourceId int) (int, []string, error) {
+	// Get source and target inbounds
+	sourceInbound, err := s.GetInbound(sourceId)
+	if err != nil {
+		return 0, nil, common.NewError("Failed to get source inbound:", err)
+	}
+
+	targetInbound, err := s.GetInbound(targetId)
+	if err != nil {
+		return 0, nil, common.NewError("Failed to get target inbound:", err)
+	}
+
+	// Verify same protocol
+	if sourceInbound.Protocol != targetInbound.Protocol {
+		return 0, nil, common.NewError("Cannot sync between different protocols")
+	}
+
+	// Get source clients
+	sourceClients, err := s.GetClients(sourceInbound)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	if len(sourceClients) == 0 {
+		return 0, nil, common.NewError("Source inbound has no clients")
+	}
+
+	// Get target clients to check for existing emails
+	targetClients, err := s.GetClients(targetInbound)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	// Build a set of existing target emails
+	existingEmails := make(map[string]bool)
+	for _, c := range targetClients {
+		existingEmails[strings.ToLower(c.Email)] = true
+	}
+
+	// Parse target settings
+	var targetSettings map[string]any
+	err = json.Unmarshal([]byte(targetInbound.Settings), &targetSettings)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	targetClientsInterface, ok := targetSettings["clients"].([]any)
+	if !ok {
+		targetClientsInterface = make([]any, 0)
+	}
+
+	// Add clients from source, skipping duplicates
+	addedCount := 0
+	skippedEmails := make([]string, 0)
+	nowTs := time.Now().Unix() * 1000
+
+	for _, sourceClient := range sourceClients {
+		emailLower := strings.ToLower(sourceClient.Email)
+		if existingEmails[emailLower] {
+			skippedEmails = append(skippedEmails, sourceClient.Email)
+			continue
+		}
+
+		// Create new client map with same UUID/password/etc
+		newClient := map[string]any{
+			"id":         sourceClient.ID,
+			"email":      sourceClient.Email,
+			"password":   sourceClient.Password,
+			"flow":       sourceClient.Flow,
+			"security":   sourceClient.Security,
+			"limitIp":    sourceClient.LimitIP,
+			"totalGB":    sourceClient.TotalGB,
+			"expiryTime": sourceClient.ExpiryTime,
+			"enable":     sourceClient.Enable,
+			"tgId":       sourceClient.TgID,
+			"subId":      sourceClient.SubID,
+			"comment":    sourceClient.Comment,
+			"reset":      sourceClient.Reset,
+			"created_at": nowTs,
+			"updated_at": nowTs,
+		}
+
+		targetClientsInterface = append(targetClientsInterface, newClient)
+		existingEmails[emailLower] = true
+		addedCount++
+	}
+
+	if addedCount == 0 {
+		return 0, skippedEmails, nil
+	}
+
+	// Save updated settings
+	targetSettings["clients"] = targetClientsInterface
+	newSettings, err := json.MarshalIndent(targetSettings, "", "  ")
+	if err != nil {
+		return 0, nil, err
+	}
+
+	targetInbound.Settings = string(newSettings)
+
+	db := database.GetDB()
+	tx := db.Begin()
+
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		} else {
+			tx.Commit()
+		}
+	}()
+
+	// Add client stats for new clients
+	for _, sourceClient := range sourceClients {
+		emailLower := strings.ToLower(sourceClient.Email)
+		// Check if this client was just added (not in original target)
+		wasOriginallyInTarget := false
+		for _, c := range targetClients {
+			if strings.ToLower(c.Email) == emailLower {
+				wasOriginallyInTarget = true
+				break
+			}
+		}
+		if !wasOriginallyInTarget {
+			s.AddClientStat(tx, targetId, &sourceClient)
+		}
+	}
+
+	err = tx.Save(targetInbound).Error
+	if err != nil {
+		return 0, nil, err
+	}
+
+	// Add users to Xray API if inbound is enabled
+	needRestart := false
+	if targetInbound.Enable {
+		s.xrayApi.Init(p.GetAPIPort())
+		var targetSettingsMap map[string]any
+		_ = json.Unmarshal([]byte(targetInbound.Settings), &targetSettingsMap)
+		cipher := ""
+		if targetInbound.Protocol == "shadowsocks" {
+			cipher, _ = targetSettingsMap["method"].(string)
+		}
+
+		for _, sourceClient := range sourceClients {
+			emailLower := strings.ToLower(sourceClient.Email)
+			wasOriginallyInTarget := false
+			for _, c := range targetClients {
+				if strings.ToLower(c.Email) == emailLower {
+					wasOriginallyInTarget = true
+					break
+				}
+			}
+			if !wasOriginallyInTarget && sourceClient.Enable {
+				err1 := s.xrayApi.AddUser(string(targetInbound.Protocol), targetInbound.Tag, map[string]any{
+					"email":    sourceClient.Email,
+					"id":       sourceClient.ID,
+					"security": sourceClient.Security,
+					"flow":     sourceClient.Flow,
+					"password": sourceClient.Password,
+					"cipher":   cipher,
+				})
+				if err1 != nil {
+					logger.Debug("Error in adding synced client by api:", err1)
+					needRestart = true
+				}
+			}
+		}
+		s.xrayApi.Close()
+	}
+
+	if needRestart {
+		logger.Debug("Xray restart may be needed after sync")
+	}
+
+	return addedCount, skippedEmails, nil
+}

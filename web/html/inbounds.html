@@ -228,6 +228,10 @@
                               <a-icon type="rest"></a-icon>
                               {{ i18n "pages.inbounds.delDepletedClients" }}
                             </a-menu-item>
+                            <a-menu-item key="syncClients">
+                              <a-icon type="sync"></a-icon>
+                              Sync Clients
+                            </a-menu-item>
                           </template>
                           <template v-else>
                             <a-menu-item key="showInfo">
@@ -990,6 +994,9 @@
           case "delDepletedClients":
             this.delDepletedClients(dbInbound.id)
             break;
+          case "syncClients":
+            this.openSyncClientsModal(dbInbound)
+            break;
         }
       },
       openCloneInbound(dbInbound) {
@@ -1364,6 +1371,81 @@
           onOk: () => this.submit('/panel/api/inbounds/delDepletedClients/' + dbInboundId),
         })
       },
+      async openSyncClientsModal(targetDbInbound) {
+        const protocol = targetDbInbound.protocol;
+        const targetId = targetDbInbound.id;
+
+        // Get same protocol inbounds
+        const msg = await HttpUtil.get('/panel/api/inbounds/listByProtocol?protocol=' + protocol);
+        if (!msg.success) {
+          this.$message.error('Failed to get inbounds');
+          return;
+        }
+
+        const sameProtocolInbounds = msg.obj.filter(inb => inb.id !== targetId);
+        if (sameProtocolInbounds.length === 0) {
+          this.$message.warning('No other ' + protocol + ' inbounds available for sync');
+          return;
+        }
+
+        // Build options for select
+        const options = sameProtocolInbounds.map(inb => ({
+          value: inb.id,
+          label: inb.remark + ' (Port: ' + inb.port + ')'
+        }));
+
+        let selectedSourceId = options[0].value;
+
+        this.$confirm({
+          title: 'Sync Clients to "' + targetDbInbound.remark + '"',
+          icon: () => null,
+          class: themeSwitcher.currentTheme,
+          content: h => h('div', [
+            h('p', 'Select source inbound to copy clients from:'),
+            h('a-select', {
+              props: {
+                defaultValue: selectedSourceId,
+                style: { width: '100%' },
+                dropdownClassName: themeSwitcher.currentTheme
+              },
+              on: {
+                change: val => { selectedSourceId = val; }
+              }
+            }, options.map(opt => h('a-select-option', { props: { value: opt.value } }, opt.label))),
+            h('p', { style: { marginTop: '10px', color: '#888', fontSize: '12px' } },
+              'Existing emails will be skipped. Same UUID/password will be used.')
+          ]),
+          okText: 'Sync',
+          cancelText: '{{ i18n "cancel"}}',
+          onOk: async () => {
+            this.loading(true);
+            try {
+              const result = await HttpUtil.postJson('/panel/api/inbounds/syncClients', {
+                targetId: targetId,
+                sourceId: selectedSourceId
+              });
+
+              if (result.success) {
+                const data = result.obj;
+                if (data.addedCount > 0) {
+                  this.$message.success('Successfully synced ' + data.addedCount + ' client(s)');
+                } else {
+                  this.$message.info('No new clients to sync (all emails already exist)');
+                }
+                if (data.skippedEmails && data.skippedEmails.length > 0) {
+                  this.$message.warning('Skipped ' + data.skippedEmails.length + ' duplicate email(s)');
+                }
+                await this.getDBInbounds();
+              } else {
+                this.$message.error(result.msg || 'Sync failed');
+              }
+            } catch (e) {
+              this.$message.error('Sync failed: ' + e);
+            }
+            this.loading(false);
+          }
+        });
+      },
       isExpiry(dbInbound, index) {
         return dbInbound.toInbound().isExpiry(index);
       },
@@ -1587,7 +1669,7 @@
       }
       this.loading();
       this.getDefaultSettings();
-      
+
       // Initial data fetch
       this.getDBInbounds().then(() => {
         this.loading(false);
@@ -1596,7 +1678,7 @@
       // Setup WebSocket for real-time updates
       if (window.wsClient) {
         window.wsClient.connect();
-        
+
         // Listen for inbounds updates
         window.wsClient.on('inbounds', (payload) => {
           if (payload && Array.isArray(payload)) {
@@ -1611,7 +1693,7 @@
           // Note: Do NOT update total consumed traffic (stats.up, stats.down) from this event
           // because clientTraffics contains delta/incremental values, not total accumulated values.
           // Total traffic is updated via the 'inbounds' event which contains accumulated values from database.
-          
+
           // Update online clients list in real-time
           if (payload && Array.isArray(payload.onlineClients)) {
             this.onlineClients = payload.onlineClients;
@@ -1623,7 +1705,7 @@
               }
             });
           }
-          
+
           // Update last online map in real-time
           if (payload && payload.lastOnlineMap && typeof payload.lastOnlineMap === 'object') {
             this.lastOnlineMap = { ...this.lastOnlineMap, ...payload.lastOnlineMap };
