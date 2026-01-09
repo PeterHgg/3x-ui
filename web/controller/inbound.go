@@ -446,12 +446,12 @@ func (a *InboundController) listByProtocol(c *gin.Context) {
 // Only works between inbounds with the same protocol.
 func (a *InboundController) syncClients(c *gin.Context) {
 	type SyncRequest struct {
-		TargetId int `json:"targetId"`
-		SourceId int `json:"sourceId"`
+		TargetId int `json:"targetId" form:"targetId"`
+		SourceId int `json:"sourceId" form:"sourceId"`
 	}
 
 	var request SyncRequest
-	err := c.ShouldBindJSON(&request)
+	err := c.ShouldBind(&request)
 	if err != nil {
 		jsonMsg(c, "Invalid request", err)
 		return
