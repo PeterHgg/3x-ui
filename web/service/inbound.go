@@ -2485,7 +2485,8 @@ func (s *InboundService) GetInboundsByProtocol(protocol string) ([]*model.Inboun
 }
 
 // SyncClientsFromInbound copies clients from source inbound to target inbound.
-// It skips clients whose email already exists in the target inbound.
+// It modifies the email by prefixing the target port (e.g. "2053_user") to avoid duplication.
+// It checks for global email uniqueness.
 // Returns the number of added clients, list of skipped emails, and any error.
 func (s *InboundService) SyncClientsFromInbound(targetId, sourceId int) (int, []string, error) {
 	// Get source and target inbounds
@@ -2514,14 +2515,21 @@ func (s *InboundService) SyncClientsFromInbound(targetId, sourceId int) (int, []
 		return 0, nil, common.NewError("Source inbound has no clients")
 	}
 
-	// Get target clients to check for existing emails
+	// Get all existing emails globally to ensure uniqueness
+	allGlobalEmails, err := s.getAllEmails()
+	if err != nil {
+		return 0, nil, err
+	}
+	existingEmails := make(map[string]bool)
+	for _, email := range allGlobalEmails {
+		existingEmails[strings.ToLower(email)] = true
+	}
+
+	// Add current target clients (in case they are not in DB yet, though unlikely)
 	targetClients, err := s.GetClients(targetInbound)
 	if err != nil {
 		return 0, nil, err
 	}
-
-	// Build a set of existing target emails
-	existingEmails := make(map[string]bool)
 	for _, c := range targetClients {
 		existingEmails[strings.ToLower(c.Email)] = true
 	}
@@ -2538,40 +2546,54 @@ func (s *InboundService) SyncClientsFromInbound(targetId, sourceId int) (int, []
 		targetClientsInterface = make([]any, 0)
 	}
 
-	// Add clients from source, skipping duplicates
+	// Add clients from source, modifying email and checking for duplicates
 	addedCount := 0
 	skippedEmails := make([]string, 0)
 	nowTs := time.Now().Unix() * 1000
+	
+	// Create a list of clients to add to DB and Xray
+	clientsToAdd := make([]*model.Client, 0)
 
 	for _, sourceClient := range sourceClients {
-		emailLower := strings.ToLower(sourceClient.Email)
+		// New email format: {Port}_{OriginalEmail}
+		newEmail := fmt.Sprintf("%d_%s", targetInbound.Port, sourceClient.Email)
+		emailLower := strings.ToLower(newEmail)
+
 		if existingEmails[emailLower] {
-			skippedEmails = append(skippedEmails, sourceClient.Email)
+			skippedEmails = append(skippedEmails, sourceClient.Email) // Log original email as skipped
 			continue
 		}
 
-		// Create new client map with same UUID/password/etc
-		newClient := map[string]any{
-			"id":         sourceClient.ID,
-			"email":      sourceClient.Email,
-			"password":   sourceClient.Password,
-			"flow":       sourceClient.Flow,
-			"security":   sourceClient.Security,
-			"limitIp":    sourceClient.LimitIP,
-			"totalGB":    sourceClient.TotalGB,
-			"expiryTime": sourceClient.ExpiryTime,
-			"enable":     sourceClient.Enable,
-			"tgId":       sourceClient.TgID,
-			"subId":      sourceClient.SubID,
-			"comment":    sourceClient.Comment,
-			"reset":      sourceClient.Reset,
+		// Create copy of source client with new email
+		clientCopy := sourceClient
+		clientCopy.Email = newEmail
+
+		// Create new client map with same UUID/password/etc but NEW EMAIL
+		newClientMap := map[string]any{
+			"id":         clientCopy.ID,
+			"email":      clientCopy.Email,
+			"password":   clientCopy.Password,
+			"flow":       clientCopy.Flow,
+			"security":   clientCopy.Security,
+			"limitIp":    clientCopy.LimitIP,
+			"totalGB":    clientCopy.TotalGB,
+			"expiryTime": clientCopy.ExpiryTime,
+			"enable":     clientCopy.Enable,
+			"tgId":       clientCopy.TgID,
+			"subId":      clientCopy.SubID,
+			"comment":    clientCopy.Comment,
+			"reset":      clientCopy.Reset,
 			"created_at": nowTs,
 			"updated_at": nowTs,
 		}
 
-		targetClientsInterface = append(targetClientsInterface, newClient)
+		targetClientsInterface = append(targetClientsInterface, newClientMap)
+		
+		// Mark this email as existing for subsequent iterations
 		existingEmails[emailLower] = true
 		addedCount++
+		
+		clientsToAdd = append(clientsToAdd, &clientCopy)
 	}
 
 	if addedCount == 0 {
@@ -2598,20 +2620,9 @@ func (s *InboundService) SyncClientsFromInbound(targetId, sourceId int) (int, []
 		}
 	}()
 
-	// Add client stats for new clients
-	for _, sourceClient := range sourceClients {
-		emailLower := strings.ToLower(sourceClient.Email)
-		// Check if this client was just added (not in original target)
-		wasOriginallyInTarget := false
-		for _, c := range targetClients {
-			if strings.ToLower(c.Email) == emailLower {
-				wasOriginallyInTarget = true
-				break
-			}
-		}
-		if !wasOriginallyInTarget {
-			s.AddClientStat(tx, targetId, &sourceClient)
-		}
+	// Add client stats for new clients (using the new email)
+	for _, clientToAdd := range clientsToAdd {
+		s.AddClientStat(tx, targetId, clientToAdd)
 	}
 
 	err = tx.Save(targetInbound).Error
@@ -2630,22 +2641,14 @@ func (s *InboundService) SyncClientsFromInbound(targetId, sourceId int) (int, []
 			cipher, _ = targetSettingsMap["method"].(string)
 		}
 
-		for _, sourceClient := range sourceClients {
-			emailLower := strings.ToLower(sourceClient.Email)
-			wasOriginallyInTarget := false
-			for _, c := range targetClients {
-				if strings.ToLower(c.Email) == emailLower {
-					wasOriginallyInTarget = true
-					break
-				}
-			}
-			if !wasOriginallyInTarget && sourceClient.Enable {
+		for _, clientToAdd := range clientsToAdd {
+			if clientToAdd.Enable {
 				err1 := s.xrayApi.AddUser(string(targetInbound.Protocol), targetInbound.Tag, map[string]any{
-					"email":    sourceClient.Email,
-					"id":       sourceClient.ID,
-					"security": sourceClient.Security,
-					"flow":     sourceClient.Flow,
-					"password": sourceClient.Password,
+					"email":    clientToAdd.Email,
+					"id":       clientToAdd.ID,
+					"security": clientToAdd.Security,
+					"flow":     clientToAdd.Flow,
+					"password": clientToAdd.Password,
 					"cipher":   cipher,
 				})
 				if err1 != nil {
