@@ -230,7 +230,7 @@
                             </a-menu-item>
                             <a-menu-item key="syncClients">
                               <a-icon type="sync"></a-icon>
-                              Sync Clients
+                              同步用户
                             </a-menu-item>
                           </template>
                           <template v-else>
@@ -1397,11 +1397,11 @@
         let selectedSourceId = options[0].value;
 
         this.$confirm({
-          title: 'Sync Clients to "' + targetDbInbound.remark + '"',
+          title: '同步用户到 "' + targetDbInbound.remark + '"',
           icon: () => null,
           class: themeSwitcher.currentTheme,
           content: h => h('div', [
-            h('p', 'Select source inbound to copy clients from:'),
+            h('p', '选择要复制用户的来源入站：'),
             h('a-select', {
               props: {
                 defaultValue: selectedSourceId,
@@ -1413,9 +1413,9 @@
               }
             }, options.map(opt => h('a-select-option', { props: { value: opt.value } }, opt.label))),
             h('p', { style: { marginTop: '10px', color: '#888', fontSize: '12px' } },
-              'Emails will be prefixed with target port (e.g. "2053_user"). Existing global emails will be skipped.')
+              '邮箱将添加目标端口前缀（如 "2053_用户"）。相同UUID的用户将被替换。')
           ]),
-          okText: 'Sync',
+          okText: '同步',
           cancelText: '{{ i18n "cancel"}}',
           onOk: async () => {
             this.loading(true);
@@ -1428,19 +1428,19 @@
               if (result.success) {
                 const data = result.obj;
                 if (data.addedCount > 0) {
-                  this.$message.success('Successfully synced ' + data.addedCount + ' client(s)');
+                  this.$message.success('成功同步 ' + data.addedCount + ' 个用户');
                 } else {
-                  this.$message.info('No new clients to sync (all emails already exist)');
+                  this.$message.info('没有新用户需要同步');
                 }
                 if (data.skippedEmails && data.skippedEmails.length > 0) {
-                  this.$message.warning('Skipped ' + data.skippedEmails.length + ' duplicate email(s)');
+                  this.$message.warning('已替换 ' + data.skippedEmails.length + ' 个重复用户');
                 }
                 await this.getDBInbounds();
               } else {
-                this.$message.error(result.msg || 'Sync failed');
+                this.$message.error(result.msg || '同步失败');
               }
             } catch (e) {
-              this.$message.error('Sync failed: ' + e);
+              this.$message.error('同步失败：' + e);
             }
             this.loading(false);
           }

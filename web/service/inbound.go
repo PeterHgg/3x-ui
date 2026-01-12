@@ -2486,8 +2486,8 @@ func (s *InboundService) GetInboundsByProtocol(protocol string) ([]*model.Inboun
 
 // SyncClientsFromInbound copies clients from source inbound to target inbound.
 // It modifies the email by prefixing the target port (e.g. "2053_user") to avoid duplication.
-// It checks for global email uniqueness.
-// Returns the number of added clients, list of skipped emails, and any error.
+// If a client with the same UUID already exists in target, it will be DELETED first.
+// Returns the number of added clients, list of replaced emails, and any error.
 func (s *InboundService) SyncClientsFromInbound(targetId, sourceId int) (int, []string, error) {
 	// Get source and target inbounds
 	sourceInbound, err := s.GetInbound(sourceId)
@@ -2515,23 +2515,16 @@ func (s *InboundService) SyncClientsFromInbound(targetId, sourceId int) (int, []
 		return 0, nil, common.NewError("Source inbound has no clients")
 	}
 
-	// Get all existing emails globally to ensure uniqueness
-	allGlobalEmails, err := s.getAllEmails()
-	if err != nil {
-		return 0, nil, err
-	}
-	existingEmails := make(map[string]bool)
-	for _, email := range allGlobalEmails {
-		existingEmails[strings.ToLower(email)] = true
-	}
-
-	// Add current target clients (in case they are not in DB yet, though unlikely)
+	// Get target clients to check for existing UUIDs
 	targetClients, err := s.GetClients(targetInbound)
 	if err != nil {
 		return 0, nil, err
 	}
+
+	// Build a map of existing target UUIDs -> email (for deletion)
+	existingUUIDs := make(map[string]string) // UUID -> email
 	for _, c := range targetClients {
-		existingEmails[strings.ToLower(c.Email)] = true
+		existingUUIDs[c.ID] = c.Email
 	}
 
 	// Parse target settings
@@ -2546,23 +2539,45 @@ func (s *InboundService) SyncClientsFromInbound(targetId, sourceId int) (int, []
 		targetClientsInterface = make([]any, 0)
 	}
 
-	// Add clients from source, modifying email and checking for duplicates
+	// Find and remove clients with same UUID from target
+	replacedEmails := make([]string, 0)
+	clientsToRemoveFromXray := make([]string, 0) // emails to remove from Xray
+
+	for _, sourceClient := range sourceClients {
+		if existingEmail, exists := existingUUIDs[sourceClient.ID]; exists {
+			replacedEmails = append(replacedEmails, existingEmail)
+			clientsToRemoveFromXray = append(clientsToRemoveFromXray, existingEmail)
+		}
+	}
+
+	// Remove matching UUIDs from targetClientsInterface
+	sourceUUIDs := make(map[string]bool)
+	for _, sc := range sourceClients {
+		sourceUUIDs[sc.ID] = true
+	}
+
+	filteredClients := make([]any, 0)
+	for _, clientAny := range targetClientsInterface {
+		clientMap, ok := clientAny.(map[string]any)
+		if !ok {
+			filteredClients = append(filteredClients, clientAny)
+			continue
+		}
+		clientID, _ := clientMap["id"].(string)
+		if !sourceUUIDs[clientID] {
+			filteredClients = append(filteredClients, clientAny)
+		}
+	}
+	targetClientsInterface = filteredClients
+
+	// Now add all source clients with new email prefix
 	addedCount := 0
-	skippedEmails := make([]string, 0)
 	nowTs := time.Now().Unix() * 1000
-	
-	// Create a list of clients to add to DB and Xray
 	clientsToAdd := make([]*model.Client, 0)
 
 	for _, sourceClient := range sourceClients {
 		// New email format: {Port}_{OriginalEmail}
 		newEmail := fmt.Sprintf("%d_%s", targetInbound.Port, sourceClient.Email)
-		emailLower := strings.ToLower(newEmail)
-
-		if existingEmails[emailLower] {
-			skippedEmails = append(skippedEmails, sourceClient.Email) // Log original email as skipped
-			continue
-		}
 
 		// Create copy of source client with new email
 		clientCopy := sourceClient
@@ -2588,16 +2603,8 @@ func (s *InboundService) SyncClientsFromInbound(targetId, sourceId int) (int, []
 		}
 
 		targetClientsInterface = append(targetClientsInterface, newClientMap)
-		
-		// Mark this email as existing for subsequent iterations
-		existingEmails[emailLower] = true
 		addedCount++
-		
 		clientsToAdd = append(clientsToAdd, &clientCopy)
-	}
-
-	if addedCount == 0 {
-		return 0, skippedEmails, nil
 	}
 
 	// Save updated settings
@@ -2620,6 +2627,11 @@ func (s *InboundService) SyncClientsFromInbound(targetId, sourceId int) (int, []
 		}
 	}()
 
+	// Delete old client stats for replaced clients
+	for _, oldEmail := range replacedEmails {
+		tx.Where("inbound_id = ? AND email = ?", targetId, oldEmail).Delete(&xray.ClientTraffic{})
+	}
+
 	// Add client stats for new clients (using the new email)
 	for _, clientToAdd := range clientsToAdd {
 		s.AddClientStat(tx, targetId, clientToAdd)
@@ -2630,10 +2642,16 @@ func (s *InboundService) SyncClientsFromInbound(targetId, sourceId int) (int, []
 		return 0, nil, err
 	}
 
-	// Add users to Xray API if inbound is enabled
-	needRestart := false
+	// Update Xray API if inbound is enabled
 	if targetInbound.Enable {
 		s.xrayApi.Init(p.GetAPIPort())
+
+		// Remove old users from Xray
+		for _, oldEmail := range clientsToRemoveFromXray {
+			s.xrayApi.RemoveUser(targetInbound.Tag, oldEmail)
+		}
+
+		// Add new users to Xray
 		var targetSettingsMap map[string]any
 		_ = json.Unmarshal([]byte(targetInbound.Settings), &targetSettingsMap)
 		cipher := ""
@@ -2653,16 +2671,11 @@ func (s *InboundService) SyncClientsFromInbound(targetId, sourceId int) (int, []
 				})
 				if err1 != nil {
 					logger.Debug("Error in adding synced client by api:", err1)
-					needRestart = true
 				}
 			}
 		}
 		s.xrayApi.Close()
 	}
 
-	if needRestart {
-		logger.Debug("Xray restart may be needed after sync")
-	}
-
-	return addedCount, skippedEmails, nil
+	return addedCount, replacedEmails, nil
 }
