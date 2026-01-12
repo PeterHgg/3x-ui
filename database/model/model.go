@@ -53,6 +53,7 @@ type Inbound struct {
 	StreamSettings string   `json:"streamSettings" form:"streamSettings"`
 	Tag            string   `json:"tag" form:"tag" gorm:"unique"`
 	Sniffing       string   `json:"sniffing" form:"sniffing"`
+	SyncSourceId   int      `json:"syncSourceId" form:"syncSourceId" gorm:"default:0"` // 0=独立节点, >0=从节点(值为源入站ID)
 }
 
 // OutboundTraffics tracks traffic statistics for Xray outbound connections.

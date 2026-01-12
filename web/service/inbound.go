@@ -673,6 +673,9 @@ func (s *InboundService) AddInboundClient(data *model.Inbound) (bool, error) {
 	}
 	s.xrayApi.Close()
 
+	// Trigger sync to slave inbounds
+	go s.TriggerSyncToSlaves(oldInbound.Id)
+
 	return needRestart, tx.Save(oldInbound).Error
 }
 
@@ -761,6 +764,10 @@ func (s *InboundService) DelInboundClient(inboundId int, clientId string) (bool,
 			s.xrayApi.Close()
 		}
 	}
+
+	// Trigger sync to slave inbounds
+	go s.TriggerSyncToSlaves(oldInbound.Id)
+
 	return needRestart, db.Save(oldInbound).Error
 }
 
@@ -936,6 +943,10 @@ func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId strin
 		logger.Debug("Client old email not found")
 		needRestart = true
 	}
+
+	// Trigger sync to slave inbounds
+	go s.TriggerSyncToSlaves(oldInbound.Id)
+
 	return needRestart, tx.Save(oldInbound).Error
 }
 
@@ -2678,4 +2689,229 @@ func (s *InboundService) SyncClientsFromInbound(targetId, sourceId int) (int, []
 	}
 
 	return addedCount, replacedEmails, nil
+}
+
+// SetSyncSource sets or clears the sync source for an inbound.
+// sourceId=0 means clearing the sync source (making it independent).
+// When setting a source, it immediately performs a full sync.
+func (s *InboundService) SetSyncSource(targetId, sourceId int) error {
+	db := database.GetDB()
+
+	targetInbound, err := s.GetInbound(targetId)
+	if err != nil {
+		return common.NewError("Failed to get target inbound:", err)
+	}
+
+	if sourceId > 0 {
+		sourceInbound, err := s.GetInbound(sourceId)
+		if err != nil {
+			return common.NewError("Failed to get source inbound:", err)
+		}
+
+		// Verify same protocol
+		if sourceInbound.Protocol != targetInbound.Protocol {
+			return common.NewError("Cannot sync between different protocols")
+		}
+
+		// Prevent circular sync (source cannot be a slave itself)
+		if sourceInbound.SyncSourceId > 0 {
+			return common.NewError("Source inbound is already a slave node")
+		}
+
+		// Prevent self-sync
+		if targetId == sourceId {
+			return common.NewError("Cannot sync to itself")
+		}
+	}
+
+	// Update SyncSourceId
+	err = db.Model(&model.Inbound{}).Where("id = ?", targetId).Update("sync_source_id", sourceId).Error
+	if err != nil {
+		return err
+	}
+
+	// If setting a new source, perform full sync immediately
+	if sourceId > 0 {
+		_, err = s.PerformFullSync(targetId)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// PerformFullSync performs a complete sync from source to target inbound.
+// It deletes ALL existing clients in target and replaces them with source clients.
+// Returns the number of synced clients and any error.
+func (s *InboundService) PerformFullSync(targetId int) (int, error) {
+	targetInbound, err := s.GetInbound(targetId)
+	if err != nil {
+		return 0, common.NewError("Failed to get target inbound:", err)
+	}
+
+	if targetInbound.SyncSourceId == 0 {
+		return 0, common.NewError("Target inbound has no sync source")
+	}
+
+	sourceInbound, err := s.GetInbound(targetInbound.SyncSourceId)
+	if err != nil {
+		return 0, common.NewError("Failed to get source inbound:", err)
+	}
+
+	// Get source clients
+	sourceClients, err := s.GetClients(sourceInbound)
+	if err != nil {
+		return 0, err
+	}
+
+	// Get current target clients (to delete from Xray)
+	targetClients, err := s.GetClients(targetInbound)
+	if err != nil {
+		return 0, err
+	}
+
+	db := database.GetDB()
+	tx := db.Begin()
+
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		} else {
+			tx.Commit()
+		}
+	}()
+
+	// Delete all client stats for target inbound
+	tx.Where("inbound_id = ?", targetId).Delete(&xray.ClientTraffic{})
+
+	// Build new clients with port prefix
+	nowTs := time.Now().Unix() * 1000
+	newClientsInterface := make([]any, 0, len(sourceClients))
+	clientsToAdd := make([]*model.Client, 0, len(sourceClients))
+
+	for _, sourceClient := range sourceClients {
+		newEmail := fmt.Sprintf("%d_%s", targetInbound.Port, sourceClient.Email)
+
+		clientCopy := sourceClient
+		clientCopy.Email = newEmail
+
+		newClientMap := map[string]any{
+			"id":         clientCopy.ID,
+			"email":      clientCopy.Email,
+			"password":   clientCopy.Password,
+			"flow":       clientCopy.Flow,
+			"security":   clientCopy.Security,
+			"limitIp":    clientCopy.LimitIP,
+			"totalGB":    clientCopy.TotalGB,
+			"expiryTime": clientCopy.ExpiryTime,
+			"enable":     clientCopy.Enable,
+			"tgId":       clientCopy.TgID,
+			"subId":      clientCopy.SubID,
+			"comment":    clientCopy.Comment,
+			"reset":      clientCopy.Reset,
+			"created_at": nowTs,
+			"updated_at": nowTs,
+		}
+
+		newClientsInterface = append(newClientsInterface, newClientMap)
+		clientsToAdd = append(clientsToAdd, &clientCopy)
+	}
+
+	// Update target settings with new clients
+	var targetSettings map[string]any
+	json.Unmarshal([]byte(targetInbound.Settings), &targetSettings)
+	targetSettings["clients"] = newClientsInterface
+	newSettings, _ := json.MarshalIndent(targetSettings, "", "  ")
+	targetInbound.Settings = string(newSettings)
+
+	// Add client stats for new clients
+	for _, clientToAdd := range clientsToAdd {
+		s.AddClientStat(tx, targetId, clientToAdd)
+	}
+
+	err = tx.Save(targetInbound).Error
+	if err != nil {
+		return 0, err
+	}
+
+	// Update Xray API
+	if targetInbound.Enable {
+		s.xrayApi.Init(p.GetAPIPort())
+
+		// Remove old users
+		for _, oldClient := range targetClients {
+			s.xrayApi.RemoveUser(targetInbound.Tag, oldClient.Email)
+		}
+
+		// Add new users
+		var targetSettingsMap map[string]any
+		json.Unmarshal([]byte(targetInbound.Settings), &targetSettingsMap)
+		cipher := ""
+		if targetInbound.Protocol == "shadowsocks" {
+			cipher, _ = targetSettingsMap["method"].(string)
+		}
+
+		for _, clientToAdd := range clientsToAdd {
+			if clientToAdd.Enable {
+				s.xrayApi.AddUser(string(targetInbound.Protocol), targetInbound.Tag, map[string]any{
+					"email":    clientToAdd.Email,
+					"id":       clientToAdd.ID,
+					"security": clientToAdd.Security,
+					"flow":     clientToAdd.Flow,
+					"password": clientToAdd.Password,
+					"cipher":   cipher,
+				})
+			}
+		}
+		s.xrayApi.Close()
+	}
+
+	return len(clientsToAdd), nil
+}
+
+// TriggerSyncToSlaves triggers sync to all inbounds that have this inbound as their source.
+// Should be called after any client changes on a master inbound.
+func (s *InboundService) TriggerSyncToSlaves(sourceId int) {
+	db := database.GetDB()
+	var slaveInbounds []*model.Inbound
+	db.Where("sync_source_id = ?", sourceId).Find(&slaveInbounds)
+
+	for _, slave := range slaveInbounds {
+		_, err := s.PerformFullSync(slave.Id)
+		if err != nil {
+			logger.Warning("Failed to sync to slave inbound", slave.Id, ":", err)
+		}
+	}
+}
+
+// GetAggregatedClientTraffic returns the total traffic for a client UUID across all inbounds.
+// This is used for slave inbounds to show combined traffic from all nodes.
+func (s *InboundService) GetAggregatedClientTraffic(uuid string) (up int64, down int64, err error) {
+	db := database.GetDB()
+
+	// Find all client_traffics that have this UUID
+	var traffics []xray.ClientTraffic
+	err = db.Where("uuid = ?", uuid).Find(&traffics).Error
+	if err != nil {
+		return 0, 0, err
+	}
+
+	for _, t := range traffics {
+		up += t.Up
+		down += t.Down
+	}
+
+	return up, down, nil
+}
+
+// GetSlaveInbounds returns all inbounds that sync from the given source inbound.
+func (s *InboundService) GetSlaveInbounds(sourceId int) ([]*model.Inbound, error) {
+	db := database.GetDB()
+	var inbounds []*model.Inbound
+	err := db.Where("sync_source_id = ?", sourceId).Find(&inbounds).Error
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return nil, err
+	}
+	return inbounds, nil
 }

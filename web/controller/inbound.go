@@ -53,6 +53,8 @@ func (a *InboundController) initRouter(g *gin.RouterGroup) {
 	g.POST("/:id/delClientByEmail/:email", a.delInboundClientByEmail)
 	g.GET("/listByProtocol", a.listByProtocol)
 	g.POST("/syncClients", a.syncClients)
+	g.POST("/setSyncSource", a.setSyncSource)
+	g.GET("/getSyncStatus/:id", a.getSyncStatus)
 }
 
 // getInbounds retrieves the list of inbounds for the logged-in user.
@@ -466,6 +468,66 @@ func (a *InboundController) syncClients(c *gin.Context) {
 	result := map[string]any{
 		"addedCount":    addedCount,
 		"skippedEmails": skippedEmails,
+	}
+	jsonObj(c, result, nil)
+}
+
+// setSyncSource sets or clears the sync source for an inbound (master-slave sync).
+// POST /panel/api/inbounds/setSyncSource
+// Body: { targetId: int, sourceId: int } (sourceId=0 to clear sync)
+func (a *InboundController) setSyncSource(c *gin.Context) {
+	type SyncSourceRequest struct {
+		TargetId int `json:"targetId" form:"targetId"`
+		SourceId int `json:"sourceId" form:"sourceId"`
+	}
+
+	var request SyncSourceRequest
+	err := c.ShouldBind(&request)
+	if err != nil {
+		jsonMsg(c, "Invalid request", err)
+		return
+	}
+
+	err = a.inboundService.SetSyncSource(request.TargetId, request.SourceId)
+	if err != nil {
+		jsonMsg(c, "Failed to set sync source", err)
+		return
+	}
+
+	if request.SourceId == 0 {
+		jsonMsg(c, "已取消同步", nil)
+	} else {
+		jsonMsg(c, "已设置同步源并完成同步", nil)
+	}
+}
+
+// getSyncStatus returns the sync status of an inbound.
+// GET /panel/api/inbounds/getSyncStatus/:id
+func (a *InboundController) getSyncStatus(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		jsonMsg(c, "Invalid inbound ID", err)
+		return
+	}
+
+	inbound, err := a.inboundService.GetInbound(id)
+	if err != nil {
+		jsonMsg(c, "Failed to get inbound", err)
+		return
+	}
+
+	var sourceName string
+	if inbound.SyncSourceId > 0 {
+		sourceInbound, err := a.inboundService.GetInbound(inbound.SyncSourceId)
+		if err == nil {
+			sourceName = sourceInbound.Remark
+		}
+	}
+
+	result := map[string]any{
+		"isSynced":   inbound.SyncSourceId > 0,
+		"sourceId":   inbound.SyncSourceId,
+		"sourceName": sourceName,
 	}
 	jsonObj(c, result, nil)
 }

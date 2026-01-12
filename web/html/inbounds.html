@@ -228,9 +228,13 @@
                               <a-icon type="rest"></a-icon>
                               {{ i18n "pages.inbounds.delDepletedClients" }}
                             </a-menu-item>
-                            <a-menu-item key="syncClients">
-                              <a-icon type="sync"></a-icon>
-                              同步用户
+                            <a-menu-item key="setSyncSource" v-if="!dbInbound.syncSourceId">
+                              <a-icon type="link"></a-icon>
+                              设置同步源
+                            </a-menu-item>
+                            <a-menu-item key="cancelSync" v-if="dbInbound.syncSourceId" :style="{ color: '#FF4D4F' }">
+                              <a-icon type="disconnect"></a-icon>
+                              取消同步
                             </a-menu-item>
                           </template>
                           <template v-else>
@@ -994,8 +998,11 @@
           case "delDepletedClients":
             this.delDepletedClients(dbInbound.id)
             break;
-          case "syncClients":
-            this.openSyncClientsModal(dbInbound)
+          case "setSyncSource":
+            this.openSetSyncSourceModal(dbInbound)
+            break;
+          case "cancelSync":
+            this.cancelSyncSource(dbInbound)
             break;
         }
       },
@@ -1371,37 +1378,38 @@
           onOk: () => this.submit('/panel/api/inbounds/delDepletedClients/' + dbInboundId),
         })
       },
-      async openSyncClientsModal(targetDbInbound) {
+      // 设置同步源 - 将此入站设为从节点
+      async openSetSyncSourceModal(targetDbInbound) {
         const protocol = targetDbInbound.protocol;
         const targetId = targetDbInbound.id;
 
-        // Get same protocol inbounds
+        // 获取相同协议的入站（排除已是从节点的入站作为源）
         const msg = await HttpUtil.get('/panel/api/inbounds/listByProtocol?protocol=' + protocol);
         if (!msg.success) {
-          this.$message.error('Failed to get inbounds');
+          this.$message.error('获取入站列表失败');
           return;
         }
 
-        const sameProtocolInbounds = msg.obj.filter(inb => inb.id !== targetId);
-        if (sameProtocolInbounds.length === 0) {
-          this.$message.warning('No other ' + protocol + ' inbounds available for sync');
+        // 过滤掉自己和已经是从节点的入站
+        const availableSources = msg.obj.filter(inb => inb.id !== targetId && !inb.syncSourceId);
+        if (availableSources.length === 0) {
+          this.$message.warning('没有可用的 ' + protocol + ' 主节点入站');
           return;
         }
 
-        // Build options for select
-        const options = sameProtocolInbounds.map(inb => ({
+        const options = availableSources.map(inb => ({
           value: inb.id,
-          label: inb.remark + ' (Port: ' + inb.port + ')'
+          label: inb.remark + ' (端口: ' + inb.port + ')'
         }));
 
         let selectedSourceId = options[0].value;
 
         this.$confirm({
-          title: '同步用户到 "' + targetDbInbound.remark + '"',
+          title: '设置同步源 - "' + targetDbInbound.remark + '"',
           icon: () => null,
           class: themeSwitcher.currentTheme,
           content: h => h('div', [
-            h('p', '选择要复制用户的来源入站：'),
+            h('p', '选择主节点（同步源）：'),
             h('a-select', {
               props: {
                 defaultValue: selectedSourceId,
@@ -1412,35 +1420,64 @@
                 change: val => { selectedSourceId = val; }
               }
             }, options.map(opt => h('a-select-option', { props: { value: opt.value } }, opt.label))),
-            h('p', { style: { marginTop: '10px', color: '#888', fontSize: '12px' } },
-              '邮箱将添加目标端口前缀（如 "2053_用户"）。相同UUID的用户将被替换。')
+            h('div', { style: { marginTop: '15px', padding: '10px', backgroundColor: '#fffbe6', border: '1px solid #ffe58f', borderRadius: '4px' } }, [
+              h('p', { style: { margin: 0, fontWeight: 'bold', color: '#d48806' } }, '⚠️ 注意：'),
+              h('ul', { style: { margin: '5px 0 0 0', paddingLeft: '20px', color: '#666' } }, [
+                h('li', '此入站的所有用户将被删除并替换为主节点的用户'),
+                h('li', '主节点的用户变更会自动同步到此入站'),
+                h('li', '此入站的用户将无法编辑（只读模式）'),
+                h('li', '用户流量将与主节点共享统计')
+              ])
+            ])
           ]),
-          okText: '同步',
+          okText: '确认设置',
           cancelText: '{{ i18n "cancel"}}',
           onOk: async () => {
             this.loading(true);
             try {
-              const result = await HttpUtil.post('/panel/api/inbounds/syncClients', {
+              const result = await HttpUtil.post('/panel/api/inbounds/setSyncSource', {
                 targetId: targetId,
                 sourceId: selectedSourceId
               });
 
               if (result.success) {
-                const data = result.obj;
-                if (data.addedCount > 0) {
-                  this.$message.success('成功同步 ' + data.addedCount + ' 个用户');
-                } else {
-                  this.$message.info('没有新用户需要同步');
-                }
-                if (data.skippedEmails && data.skippedEmails.length > 0) {
-                  this.$message.warning('已替换 ' + data.skippedEmails.length + ' 个重复用户');
-                }
+                this.$message.success(result.msg || '同步源设置成功');
                 await this.getDBInbounds();
               } else {
-                this.$message.error(result.msg || '同步失败');
+                this.$message.error(result.msg || '设置失败');
               }
             } catch (e) {
-              this.$message.error('同步失败：' + e);
+              this.$message.error('设置失败：' + e);
+            }
+            this.loading(false);
+          }
+        });
+      },
+      // 取消同步 - 将从节点恢复为独立节点
+      async cancelSyncSource(dbInbound) {
+        this.$confirm({
+          title: '取消同步',
+          content: '确定要取消 "' + dbInbound.remark + '" 的同步吗？取消后此入站将成为独立节点，但已有的用户不会被删除。',
+          okText: '确认取消',
+          okType: 'danger',
+          cancelText: '{{ i18n "cancel"}}',
+          class: themeSwitcher.currentTheme,
+          onOk: async () => {
+            this.loading(true);
+            try {
+              const result = await HttpUtil.post('/panel/api/inbounds/setSyncSource', {
+                targetId: dbInbound.id,
+                sourceId: 0
+              });
+
+              if (result.success) {
+                this.$message.success(result.msg || '已取消同步');
+                await this.getDBInbounds();
+              } else {
+                this.$message.error(result.msg || '取消失败');
+              }
+            } catch (e) {
+              this.$message.error('取消失败：' + e);
             }
             this.loading(false);
           }
