@@ -2948,6 +2948,9 @@ func (s *InboundService) PerformFullSync(targetId int) (int, error) {
 // TriggerSyncToSlaves triggers sync to all inbounds that have this inbound as their source.
 // Should be called after any client changes on a master inbound.
 func (s *InboundService) TriggerSyncToSlaves(sourceId int) {
+	// Small delay to ensure the caller's transaction has fully committed
+	time.Sleep(100 * time.Millisecond)
+
 	db := database.GetDB()
 	var slaveInbounds []*model.Inbound
 	db.Where("sync_source_id = ?", sourceId).Find(&slaveInbounds)

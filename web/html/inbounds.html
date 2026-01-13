@@ -1441,10 +1441,7 @@
               });
 
               if (result.success) {
-                this.$message.success(result.msg || '同步源设置成功');
                 await this.getDBInbounds();
-              } else {
-                this.$message.error(result.msg || '设置失败');
               }
             } catch (e) {
               this.$message.error('设置失败：' + e);
@@ -1471,10 +1468,7 @@
               });
 
               if (result.success) {
-                this.$message.success(result.msg || '已取消同步');
                 await this.getDBInbounds();
-              } else {
-                this.$message.error(result.msg || '取消失败');
               }
             } catch (e) {
               this.$message.error('取消失败：' + e);
