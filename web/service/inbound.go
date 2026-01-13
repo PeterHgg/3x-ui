@@ -35,25 +35,7 @@ func (s *InboundService) GetInbounds(userId int) ([]*model.Inbound, error) {
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return nil, err
 	}
-	// Enrich client stats with UUID/SubId from inbound settings
-	for _, inbound := range inbounds {
-		clients, _ := s.GetClients(inbound)
-		if len(clients) == 0 || len(inbound.ClientStats) == 0 {
-			continue
-		}
-		// Build a map email -> client
-		cMap := make(map[string]model.Client, len(clients))
-		for _, c := range clients {
-			cMap[strings.ToLower(c.Email)] = c
-		}
-		for i := range inbound.ClientStats {
-			email := strings.ToLower(inbound.ClientStats[i].Email)
-			if c, ok := cMap[email]; ok {
-				inbound.ClientStats[i].UUID = c.ID
-				inbound.ClientStats[i].SubId = c.SubID
-			}
-		}
-	}
+	s.enrichInbounds(inbounds)
 	return inbounds, nil
 }
 
@@ -66,24 +48,7 @@ func (s *InboundService) GetAllInbounds() ([]*model.Inbound, error) {
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return nil, err
 	}
-	// Enrich client stats with UUID/SubId from inbound settings
-	for _, inbound := range inbounds {
-		clients, _ := s.GetClients(inbound)
-		if len(clients) == 0 || len(inbound.ClientStats) == 0 {
-			continue
-		}
-		cMap := make(map[string]model.Client, len(clients))
-		for _, c := range clients {
-			cMap[strings.ToLower(c.Email)] = c
-		}
-		for i := range inbound.ClientStats {
-			email := strings.ToLower(inbound.ClientStats[i].Email)
-			if c, ok := cMap[email]; ok {
-				inbound.ClientStats[i].UUID = c.ID
-				inbound.ClientStats[i].SubId = c.SubID
-			}
-		}
-	}
+	s.enrichInbounds(inbounds)
 	return inbounds, nil
 }
 
@@ -1071,6 +1036,42 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 	err = tx.Save(dbClientTraffics).Error
 	if err != nil {
 		logger.Warning("AddClientTraffic update data ", err)
+		return err
+	}
+
+	// Propagate slave traffic to master
+	for _, traffic := range traffics {
+		if traffic.Up+traffic.Down == 0 {
+			continue
+		}
+		parts := strings.SplitN(traffic.Email, "_", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		portStr, originalEmail := parts[0], parts[1]
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			continue
+		}
+
+		// Find the slave inbound of this port
+		var slaveInbound model.Inbound
+		err = tx.Model(&model.Inbound{}).Where("port = ? AND sync_source_id > 0", port).First(&slaveInbound).Error
+		if err != nil {
+			continue
+		}
+
+		// Update master client traffic record (increment by same delta)
+		err = tx.Model(&xray.ClientTraffic{}).
+			Where("inbound_id = ? AND email = ?", slaveInbound.SyncSourceId, originalEmail).
+			Updates(map[string]any{
+				"up":       gorm.Expr("up + ?", traffic.Up),
+				"down":     gorm.Expr("down + ?", traffic.Down),
+				"all_time": gorm.Expr("all_time + ?", traffic.Up+traffic.Down),
+			}).Error
+		if err != nil {
+			logger.Warningf("Failed to propagate traffic from slave %d to master %d: %v", slaveInbound.Id, slaveInbound.SyncSourceId, err)
+		}
 	}
 
 	return nil
@@ -1302,12 +1303,86 @@ func (s *InboundService) disableInvalidClients(tx *gorm.DB) (bool, int64, error)
 		}
 		s.xrayApi.Close()
 	}
+	// Fetch affected inbounds before update to trigger sync
+	var affectedInboundIds []int
+	tx.Model(xray.ClientTraffic{}).
+		Where("((total > 0 and up + down >= total) or (expiry_time > 0 and expiry_time <= ?)) and enable = ?", now, true).
+		Distinct("inbound_id").
+		Pluck("inbound_id", &affectedInboundIds)
+
 	result := tx.Model(xray.ClientTraffic{}).
 		Where("((total > 0 and up + down >= total) or (expiry_time > 0 and expiry_time <= ?)) and enable = ?", now, true).
 		Update("enable", false)
 	err := result.Error
 	count := result.RowsAffected
+
+	if count > 0 {
+		for _, id := range affectedInboundIds {
+			// If it's a master, trigger sync to slaves
+			go s.TriggerSyncToSlaves(id)
+		}
+	}
+
 	return needRestart, count, err
+}
+
+func (s *InboundService) enrichInbounds(inbounds []*model.Inbound) {
+	// 1. Enrich UUID/SubId and build a stats map
+	statsMap := make(map[string]*xray.ClientTraffic) // key: InboundId_Email
+	for _, inbound := range inbounds {
+		clients, _ := s.GetClients(inbound)
+		cMap := make(map[string]model.Client)
+		if len(clients) > 0 {
+			for _, c := range clients {
+				cMap[strings.ToLower(c.Email)] = c
+			}
+		}
+		for i := range inbound.ClientStats {
+			email := strings.ToLower(inbound.ClientStats[i].Email)
+			if c, ok := cMap[email]; ok {
+				inbound.ClientStats[i].UUID = c.ID
+				inbound.ClientStats[i].SubId = c.SubID
+			}
+			key := fmt.Sprintf("%d_%s", inbound.Id, email)
+			statsMap[key] = &inbound.ClientStats[i]
+		}
+	}
+
+	// 2. Aggregate / Replace slave stats with master stats
+	for _, inbound := range inbounds {
+		if inbound.SyncSourceId > 0 {
+			for i := range inbound.ClientStats {
+				parts := strings.SplitN(inbound.ClientStats[i].Email, "_", 2)
+				if len(parts) == 2 {
+					masterEmail := strings.ToLower(parts[1])
+					masterKey := fmt.Sprintf("%d_%s", inbound.SyncSourceId, masterEmail)
+					if masterStat, ok := statsMap[masterKey]; ok {
+						// Use master's usage and limit
+						inbound.ClientStats[i].Up = masterStat.Up
+						inbound.ClientStats[i].Down = masterStat.Down
+						inbound.ClientStats[i].AllTime = masterStat.AllTime
+						inbound.ClientStats[i].Total = masterStat.Total
+						inbound.ClientStats[i].ExpiryTime = masterStat.ExpiryTime
+						inbound.ClientStats[i].Enable = masterStat.Enable
+					} else {
+						// Master Stat not in current inbounds list, fetch from DB
+						var ms xray.ClientTraffic
+						err := database.GetDB().Model(xray.ClientTraffic{}).
+							Where("inbound_id = ? AND email = ?", inbound.SyncSourceId, masterEmail).
+							First(&ms).Error
+						if err == nil {
+							inbound.ClientStats[i].Up = ms.Up
+							inbound.ClientStats[i].Down = ms.Down
+							inbound.ClientStats[i].AllTime = ms.AllTime
+							inbound.ClientStats[i].Total = ms.Total
+							inbound.ClientStats[i].ExpiryTime = ms.ExpiryTime
+							inbound.ClientStats[i].Enable = ms.Enable
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 func (s *InboundService) GetInboundTags() (string, error) {
