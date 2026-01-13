@@ -494,11 +494,8 @@ func (a *InboundController) setSyncSource(c *gin.Context) {
 		return
 	}
 
-	if request.SourceId == 0 {
-		jsonMsg(c, "已取消同步", nil)
-	} else {
-		jsonMsg(c, "已设置同步源并完成同步", nil)
-	}
+	// Frontend will handle sync progress notification
+	jsonMsg(c, "", nil)
 }
 
 // getSyncStatus returns the sync status of an inbound.
