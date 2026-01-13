@@ -204,11 +204,11 @@
                             {{ i18n "qrCode" }}
                           </a-menu-item>
                           <template v-if="dbInbound.isMultiUser()">
-                            <a-menu-item key="addClient">
+                            <a-menu-item key="addClient" v-if="!dbInbound.syncSourceId">
                               <a-icon type="user-add"></a-icon>
                               {{ i18n "pages.client.add"}}
                             </a-menu-item>
-                            <a-menu-item key="addBulkClient">
+                            <a-menu-item key="addBulkClient" v-if="!dbInbound.syncSourceId">
                               <a-icon type="usergroup-add"></a-icon>
                               {{ i18n "pages.client.bulk"}}
                             </a-menu-item>
