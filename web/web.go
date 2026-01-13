@@ -332,7 +332,8 @@ func (s *Server) startTask() {
 	// Run once a month, midnight, first of month
 	s.cron.AddJob("@monthly", job.NewPeriodicTrafficResetJob("monthly"))
 
-	// LDAP sync scheduling
+	// Periodic sync job - check and sync slave inbounds every 5 minutes
+	s.cron.AddJob("@every 5m", job.NewPeriodicSyncJob())
 	if ldapEnabled, _ := s.settingService.GetLdapEnable(); ldapEnabled {
 		runtime, err := s.settingService.GetLdapSyncCron()
 		if err != nil || runtime == "" {
