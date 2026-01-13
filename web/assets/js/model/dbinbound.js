@@ -21,6 +21,7 @@ class DBInbound {
         this.tag = "";
         this.sniffing = "";
         this.clientStats = ""
+        this.syncSourceId = 0; // 0=独立节点, >0=从节点(值为源入站ID)
         if (data == null) {
             return;
         }
