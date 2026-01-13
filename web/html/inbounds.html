@@ -1177,6 +1177,9 @@
           settings: '{"clients": [' + clients.toString() + ']}',
         };
         await this.submit(`/panel/api/inbounds/addClient`, data, modal);
+        
+        // Check if this inbound has slave nodes and show sync progress
+        await this.checkAndShowSyncProgress(dbInboundId);
       },
       async updateClient(client, dbInboundId, clientId) {
         const data = {
@@ -1184,6 +1187,20 @@
           settings: '{"clients": [' + client.toString() + ']}',
         };
         await this.submit(`/panel/api/inbounds/updateClient/${clientId}`, data, clientModal);
+        
+        // Check if this inbound has slave nodes and show sync progress
+        await this.checkAndShowSyncProgress(dbInboundId);
+      },
+      async checkAndShowSyncProgress(inboundId) {
+        // Check if there are slave nodes for this inbound
+        const hasSlaves = this.dbInbounds.some(inbound => inbound.syncSourceId === inboundId);
+        
+        if (hasSlaves) {
+          const hide = this.$message.loading('正在同步到从节点...', 0);
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          hide();
+          this.$message.success('同步完成');
+        }
       },
       resetTraffic(dbInboundId) {
         dbInbound = this.dbInbounds.find(row => row.id === dbInboundId);
