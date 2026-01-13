@@ -1441,7 +1441,15 @@
               });
 
               if (result.success) {
+                // 显示同步进度提示
+                const hide = this.$message.loading('正在同步到从节点...', 0);
+
+                // 等待同步完成（延迟时间略长于后端的100ms + 同步时间）
+                await new Promise(resolve => setTimeout(resolve, 1500));
+
+                hide();
                 await this.getDBInbounds();
+                this.$message.success('同步完成');
               }
             } catch (e) {
               this.$message.error('设置失败：' + e);
