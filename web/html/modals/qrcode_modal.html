@@ -39,6 +39,14 @@
         </tr-qr-bg>
       </tr-qr-box>
     </template>
+    <tr-qr-box class="qr-box" v-if="clashSubLink">
+      <a-tag color="orange" class="qr-tag"><span>Clash 订阅</span></a-tag>
+      <tr-qr-bg class="qr-bg-sub">
+        <tr-qr-bg-inner class="qr-bg-sub-inner">
+          <canvas @click="copy(clashSubLink)" id="qrCode-clash" class="qr-cv"></canvas>
+        </tr-qr-bg-inner>
+      </tr-qr-bg>
+    </tr-qr-box>
     <template v-for="(row, index) in qrModal.qrcodes">
       <tr-qr-box class="qr-box">
         <a-tag color="green" class="qr-tag"><span>[[ row.remark ]]</span></a-tag>
@@ -57,39 +65,44 @@
     border-radius: 1rem;
     overflow-x: hidden;
   }
-  
+
   /* QR code transition effects */
   .qr-cv {
     transition: all 0.3s ease-in-out;
   }
-  
-  .qr-transition-enter-active, .qr-transition-leave-active {
+
+  .qr-transition-enter-active,
+  .qr-transition-leave-active {
     transition: opacity 0.3s, transform 0.3s;
   }
-  
-  .qr-transition-enter, .qr-transition-leave-to {
+
+  .qr-transition-enter,
+  .qr-transition-leave-to {
     opacity: 0;
     transform: scale(0.9);
   }
-  
-  .qr-transition-enter-to, .qr-transition-leave {
+
+  .qr-transition-enter-to,
+  .qr-transition-leave {
     opacity: 1;
     transform: scale(1);
   }
-  
+
   .qr-flash {
     animation: qr-flash-animation 0.6s;
   }
-  
+
   @keyframes qr-flash-animation {
     0% {
       opacity: 1;
       transform: scale(1);
     }
+
     50% {
       opacity: 0.5;
       transform: scale(0.95);
     }
+
     100% {
       opacity: 1;
       transform: scale(1);
@@ -147,6 +160,7 @@
       qrModal: qrModal,
       serverStatus: null,
       statusFetched: false,
+      clashSubLink: '',
     },
     methods: {
       async getStatus() {
@@ -159,7 +173,7 @@
           console.error("Failed to get status:", e);
         }
       },
-      
+
       toggleIPv4(index) {
         const row = qrModal.qrcodes[index];
         row.useIPv4 = !row.useIPv4;
@@ -170,13 +184,13 @@
         if (!this.serverStatus || !this.serverStatus.publicIP) {
           return;
         }
-        
+
         if (row.useIPv4 && this.serverStatus.publicIP.ipv4) {
           // Replace the hostname or IP in the link with the IPv4 address
           const originalLink = row.originalLink;
           const url = new URL(originalLink);
           const ipv4 = this.serverStatus.publicIP.ipv4;
-          
+
           if (qrModal.inbound.protocol == Protocols.WIREGUARD) {
             // Special handling for WireGuard config
             const endpointRegex = /Endpoint = ([^:]+):(\d+)/;
@@ -196,19 +210,19 @@
           // Restore original link
           row.link = row.originalLink;
         }
-        
+
         // Update QR code with transition effect
         const canvasElement = document.querySelector('#qrCode-' + index);
         if (canvasElement) {
           // Add flash animation class
           canvasElement.classList.add('qr-flash');
-          
+
           // Remove the class after animation completes
           setTimeout(() => {
             canvasElement.classList.remove('qr-flash');
           }, 600);
         }
-        
+
         this.setQrCode("qrCode-" + index, row.link);
       },
       copy(content) {
@@ -236,6 +250,36 @@
       genSubJsonLink(subID) {
         return app.subSettings.subJsonURI + subID;
       },
+      genClashLink() {
+        const client = qrModal.client;
+        const inbound = qrModal.inbound;
+
+        if (!client || !inbound) return '';
+
+        let link = window.location.origin + '/generate?';
+
+        // 根据协议提取 UUID 或密码
+        if (inbound.protocol === 'vmess') {
+          if (client.id) {
+            link += 'uuid=' + encodeURIComponent(client.id);
+          } else {
+            return '';
+          }
+        } else if (inbound.protocol === 'trojan') {
+          if (client.password) {
+            link += 'password=' + encodeURIComponent(client.password);
+          } else {
+            return '';
+          }
+        } else {
+          return ''; // 不支持的协议
+        }
+
+        // 添加默认参数
+        link += '&count=28';
+
+        return link;
+      },
       revertOverflow() {
         const elements = document.querySelectorAll(".qr-tag");
         elements.forEach((element) => {
@@ -253,6 +297,14 @@
         if (!this.statusFetched) {
           this.getStatus();
           this.statusFetched = true;
+        }
+
+        // 生成 Clash 订阅链接
+        this.clashSubLink = this.genClashLink();
+        if (this.clashSubLink) {
+          this.$nextTick(() => {
+            this.setQrCode("qrCode-clash", this.clashSubLink);
+          });
         }
       } else {
         this.revertOverflow();

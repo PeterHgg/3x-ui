@@ -21,6 +21,7 @@ type SUBController struct {
 
 	subService     *SubService
 	subJsonService *SubJsonService
+	clashService   *ClashService
 }
 
 // NewSUBController creates a new subscription controller with the given configuration.
@@ -50,6 +51,7 @@ func NewSUBController(
 
 		subService:     sub,
 		subJsonService: NewSubJsonService(jsonFragment, jsonNoise, jsonMux, jsonRules, sub),
+		clashService:   NewClashService(),
 	}
 	a.initRouter(g)
 	return a
@@ -64,6 +66,10 @@ func (a *SUBController) initRouter(g *gin.RouterGroup) {
 		gJson := g.Group(a.subJsonPath)
 		gJson.GET(":subid", a.subJsons)
 	}
+
+	// Clash 订阅路由
+	g.GET("/generate", a.generateClash)
+	g.GET("/rules/:type", a.getClashRules)
 }
 
 // subs handles HTTP requests for subscription links, returning either HTML page or base64-encoded subscription data.
@@ -158,4 +164,72 @@ func (a *SUBController) ApplyCommonHeaders(c *gin.Context, header, updateInterva
 	c.Writer.Header().Set("Subscription-Userinfo", header)
 	c.Writer.Header().Set("Profile-Update-Interval", updateInterval)
 	c.Writer.Header().Set("Profile-Title", "base64:"+base64.StdEncoding.EncodeToString([]byte(profileTitle)))
+}
+
+// generateClash handles Clash subscription generation requests
+func (a *SUBController) generateClash(c *gin.Context) {
+	uuid := c.Query("uuid")
+	password := c.Query("password")
+	count := c.DefaultQuery("count", "1")
+	domain := c.Query("domain")
+	prefix := c.DefaultQuery("prefix", "cdn")
+
+	// 验证参数
+	if uuid == "" && password == "" {
+		c.String(400, "uuid 或 password 缺失，请检查节点内容")
+		return
+	}
+
+	countInt := 1
+	if _, err := fmt.Sscanf(count, "%d", &countInt); err != nil || countInt < 1 {
+		c.String(400, "请输入生成数量")
+		return
+	}
+
+	// 如果没传 domain，取当前请求的主域名
+	if domain == "" {
+		host := c.Request.Host
+		parts := strings.Split(host, ".")
+		if len(parts) >= 2 {
+			domain = strings.Join(parts[len(parts)-2:], ".")
+		} else {
+			domain = host
+		}
+	}
+
+	// 生成配置
+	origin := fmt.Sprintf("%s://%s", a.getScheme(c), c.Request.Host)
+	config, err := a.clashService.GenerateClashConfig(uuid, password, domain, countInt, prefix, origin)
+	if err != nil {
+		c.String(500, "生成配置失败: %v", err)
+		return
+	}
+
+	// 返回 YAML
+	yamlContent := config.ToYAML()
+	c.Data(200, "text/plain;charset=utf-8", []byte(yamlContent))
+}
+
+// getClashRules handles Clash rules proxy requests
+func (a *SUBController) getClashRules(c *gin.Context) {
+	ruleType := c.Param("type")
+
+	content, err := a.clashService.GetRules(ruleType)
+	if err != nil {
+		c.String(500, "获取规则失败: %v", err)
+		return
+	}
+
+	c.Data(200, "text/plain;charset=utf-8", []byte(content))
+}
+
+// getScheme returns the scheme (http or https) from the request
+func (a *SUBController) getScheme(c *gin.Context) string {
+	if c.Request.TLS != nil {
+		return "https"
+	}
+	if scheme := c.GetHeader("X-Forwarded-Proto"); scheme != "" {
+		return scheme
+	}
+	return "http"
 }
