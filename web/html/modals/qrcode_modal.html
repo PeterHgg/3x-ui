@@ -260,6 +260,12 @@
         const subURI = app.subSettings.subURI || window.location.origin;
         // 提取基础 URL 和路径
         const url = new URL(subURI);
+
+        // 如果开启了隐藏端口，则移除端口信息
+        if (app.subSettings.clashNoPort) {
+          url.port = '';
+        }
+
         const basePath = url.pathname.replace(/\/[^\/]*$/, '/'); // 保留路径，移除最后的子路径
         let link = url.origin + basePath + 'generate?';
 

@@ -47,11 +47,12 @@ class AllSetting {
         this.subJsonNoises = "";
         this.subJsonMux = "";
         this.subJsonRules = "";
-        
+
         // Clash settings
         this.clashDomain = "";
         this.clashPrefix = "cdn";
         this.clashCount = 28;
+        this.clashNoPort = false;
 
         this.timeLocation = "Local";
 

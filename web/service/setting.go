@@ -704,6 +704,7 @@ func (s *SettingService) GetDefaultSettings(host string) (any, error) {
 		"datepicker":    func() (any, error) { return s.GetDatepicker() },
 		"ipLimitEnable": func() (any, error) { return s.GetIpLimitEnable() },
 		"clashCount":    func() (any, error) { return s.GetClashCount() },
+		"clashNoPort":   func() (any, error) { return s.GetClashNoPort() },
 	}
 
 	result := make(map[string]any)
@@ -774,4 +775,11 @@ func (s *SettingService) GetClashPrefix() (string, error) {
 
 func (s *SettingService) GetClashCount() (int, error) {
 	return s.getInt("clashCount")
+}
+func (s *SettingService) GetClashNoPort() (bool, error) {
+	return s.getBool("clashNoPort")
+}
+
+func (s *SettingService) UpdateClashNoPort(noPort bool) error {
+	return s.saveOne("clashNoPort", noPort)
 }
