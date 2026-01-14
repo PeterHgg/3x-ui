@@ -94,6 +94,10 @@ var defaultValueMap = map[string]string{
 	"ldapDefaultTotalGB":    "0",
 	"ldapDefaultExpiryDays": "0",
 	"ldapDefaultLimitIP":    "0",
+	// Clash subscription defaults
+	"clashDomain": "",
+	"clashPrefix": "cdn",
+	"clashCount":  "28",
 }
 
 // SettingService provides business logic for application settings management.
@@ -756,4 +760,17 @@ func (s *SettingService) GetDefaultSettings(host string) (any, error) {
 	}
 
 	return result, nil
+}
+
+// Clash subscription getters
+func (s *SettingService) GetClashDomain() (string, error) {
+	return s.getString("clashDomain")
+}
+
+func (s *SettingService) GetClashPrefix() (string, error) {
+	return s.getString("clashPrefix")
+}
+
+func (s *SettingService) GetClashCount() (int, error) {
+	return s.getInt("clashCount")
 }

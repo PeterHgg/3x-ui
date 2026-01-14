@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/mhsanaei/3x-ui/v2/config"
+	"github.com/mhsanaei/3x-ui/v2/web/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -170,14 +171,58 @@ func (a *SUBController) ApplyCommonHeaders(c *gin.Context, header, updateInterva
 func (a *SUBController) generateClash(c *gin.Context) {
 	uuid := c.Query("uuid")
 	password := c.Query("password")
-	count := c.DefaultQuery("count", "1")
+	count := c.Query("count")
 	domain := c.Query("domain")
-	prefix := c.DefaultQuery("prefix", "cdn")
+	prefix := c.Query("prefix")
 
 	// 验证参数
 	if uuid == "" && password == "" {
 		c.String(400, "uuid 或 password 缺失，请检查节点内容")
 		return
+	}
+
+	// 从设置获取默认值
+	settingService := new(service.SettingService)
+
+	// 获取订阅端口
+	subPort, err := settingService.GetSubPort()
+	if err != nil {
+		subPort = 2096
+	}
+
+	// 获取订阅域名
+	subDomain, err := settingService.GetSubDomain()
+	if err != nil || subDomain == "" {
+		subDomain = strings.Split(c.Request.Host, ":")[0]
+	}
+
+	// 获取 Clash 默认配置
+	if count == "" {
+		defaultCount, err := settingService.GetClashCount()
+		if err == nil {
+			count = fmt.Sprintf("%d", defaultCount)
+		} else {
+			count = "28"
+		}
+	}
+
+	if domain == "" {
+		clashDomain, err := settingService.GetClashDomain()
+		if err == nil && clashDomain != "" {
+			domain = clashDomain
+		} else {
+			// 使用订阅域名
+			domain = subDomain
+		}
+	}
+
+	if prefix == "" {
+		clashPrefix, err := settingService.GetClashPrefix()
+		if err == nil {
+			prefix = clashPrefix
+		} else {
+			prefix = "cdn"
+		}
 	}
 
 	countInt := 1
@@ -186,20 +231,9 @@ func (a *SUBController) generateClash(c *gin.Context) {
 		return
 	}
 
-	// 如果没传 domain，取当前请求的主域名
-	if domain == "" {
-		host := c.Request.Host
-		parts := strings.Split(host, ".")
-		if len(parts) >= 2 {
-			domain = strings.Join(parts[len(parts)-2:], ".")
-		} else {
-			domain = host
-		}
-	}
-
 	// 生成配置
-	origin := fmt.Sprintf("%s://%s", a.getScheme(c), c.Request.Host)
-	config, err := a.clashService.GenerateClashConfig(uuid, password, domain, countInt, prefix, origin)
+	origin := fmt.Sprintf("%s://%s:%d", a.getScheme(c), subDomain, subPort)
+	config, err := a.clashService.GenerateClashConfig(uuid, password, domain, countInt, prefix, origin, subPort)
 	if err != nil {
 		c.String(500, "生成配置失败: %v", err)
 		return
