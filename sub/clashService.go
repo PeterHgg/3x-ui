@@ -11,6 +11,7 @@ import (
 
 	"github.com/mhsanaei/3x-ui/v2/database"
 	"github.com/mhsanaei/3x-ui/v2/database/model"
+	"github.com/mhsanaei/3x-ui/v2/web/service"
 )
 
 type ClashService struct {
@@ -53,8 +54,12 @@ func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, cou
 	// 生成 CDN 节点
 	proxies := s.generateCDNProxies(baseNodes, cdnDomain, count, prefix, subPort)
 
+	// 读取自定义组名
+	settingService := new(service.SettingService)
+	groupNamesJSON, _ := settingService.GetClashGroupNames()
+
 	// 生成代理组
-	proxyGroups := s.generateProxyGroups(proxies)
+	proxyGroups := s.generateProxyGroups(proxies, groupNamesJSON)
 
 	// 生成规则提供者
 	ruleProviders := s.generateRuleProviders(origin)
@@ -249,7 +254,13 @@ func (s *ClashService) createTrojanProxy(inbound *model.Inbound, cdnServer, node
 }
 
 // 生成代理组
-func (s *ClashService) generateProxyGroups(proxies []ClashProxy) []ClashProxyGroup {
+func (s *ClashService) generateProxyGroups(proxies []ClashProxy, groupNamesJSON string) []ClashProxyGroup {
+	// 解析自定义组名
+	customNames := make(map[string]string)
+	if groupNamesJSON != "" {
+		json.Unmarshal([]byte(groupNamesJSON), &customNames)
+	}
+
 	// 按后缀分类节点
 	groupMap := make(map[string][]string)
 	groupOrder := []string{} // 保持顺序
@@ -276,8 +287,11 @@ func (s *ClashService) generateProxyGroups(proxies []ClashProxy) []ClashProxyGro
 	// 1. 创建顶层 select 组，包含所有 load-balance 组
 	loadBalanceGroupNames := []string{}
 	for _, key := range groupOrder {
-		// 默认组名就是后缀名，后续可以从设置中读取自定义名称
-		groupName := key
+		// 使用自定义名称或默认名称
+		groupName := customNames[key]
+		if groupName == "" {
+			groupName = key // 如果没有自定义名称，使用后缀本身
+		}
 		loadBalanceGroupNames = append(loadBalanceGroupNames, groupName)
 	}
 
@@ -291,7 +305,10 @@ func (s *ClashService) generateProxyGroups(proxies []ClashProxy) []ClashProxyGro
 
 	// 2. 为每个分组创建 load-balance 组
 	for _, key := range groupOrder {
-		groupName := key // 默认名称
+		groupName := customNames[key]
+		if groupName == "" {
+			groupName = key
+		}
 		nodes := groupMap[key]
 
 		groups = append(groups, ClashProxyGroup{

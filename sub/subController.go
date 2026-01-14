@@ -63,14 +63,14 @@ func NewSUBController(
 func (a *SUBController) initRouter(g *gin.RouterGroup) {
 	gLink := g.Group(a.subPath)
 	gLink.GET(":subid", a.subs)
+	// Clash 订阅路由（也使用 subPath）
+	gLink.GET("generate", a.generateClash)
+	gLink.GET("rules/:type", a.getClashRules)
+
 	if a.jsonEnabled {
 		gJson := g.Group(a.subJsonPath)
 		gJson.GET(":subid", a.subJsons)
 	}
-
-	// Clash 订阅路由
-	g.GET("/generate", a.generateClash)
-	g.GET("/rules/:type", a.getClashRules)
 }
 
 // subs handles HTTP requests for subscription links, returning either HTML page or base64-encoded subscription data.

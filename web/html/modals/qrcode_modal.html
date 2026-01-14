@@ -256,10 +256,12 @@
 
         if (!client || !inbound) return '';
 
-        // 使用订阅 URI 作为基础，移除路径部分
+        // 使用订阅 URI 作为基础
         const subURI = app.subSettings.subURI || window.location.origin;
-        const baseURL = subURI.replace(/\/sub\/.*$/, ''); // 移除 /sub/ 路径
-        let link = baseURL + '/generate?';
+        // 提取基础 URL 和路径
+        const url = new URL(subURI);
+        const basePath = url.pathname.replace(/\/[^\/]*$/, '/'); // 保留路径，移除最后的子路径
+        let link = url.origin + basePath + 'generate?';
 
         // 根据协议提取 UUID 或密码
         if (inbound.protocol === 'vmess') {
