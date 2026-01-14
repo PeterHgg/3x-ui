@@ -98,6 +98,7 @@ var defaultValueMap = map[string]string{
 	"clashDomain": "",
 	"clashPrefix": "cdn",
 	"clashCount":  "28",
+	"clashNoPort": "false",
 }
 
 // SettingService provides business logic for application settings management.

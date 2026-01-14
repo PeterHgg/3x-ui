@@ -130,6 +130,13 @@
                     :style="{ width: '100%' }"></a-input-number>
             </template>
         </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>隐藏端口 (Hide Port)</template>
+            <template #description>生成订阅链接时不带端口（默认 443），适用于已配置 HTTPS 回源的情况</template>
+            <template #control>
+                <a-switch v-model="allSetting.clashNoPort"></a-switch>
+            </template>
+        </a-setting-list-item>
     </a-collapse-panel>
 </a-collapse>
 {{end}}
