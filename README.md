@@ -1,5 +1,3 @@
-[中文](/README.md) | [English](/README.en.md) | [فارسی](/README.fa_IR.md) | [العربية](/README.ar_EG.md) | [Español](/README.es_ES.md) | [Русский](/README.ru_RU.md)
-
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="./media/3x-ui-dark.png">
@@ -28,6 +26,19 @@
 - ✅ **只读从节点**：从节点自动禁用客户端编辑，防止数据不一致
 - ✅ **定期同步恢复**：每5分钟自动检查并恢复同步，确保数据一致性
 - ✅ **实时同步提示**：设置同步源和添加客户端时显示同步进度
+
+### Clash 定制订阅 (v2.8.x+)
+> [!NOTE]
+> 本配置专用于 Cloudflare 优选架构，非通用订阅转换器。
+
+- ✅ **智能节点生成**：自动批量生成指向 CF 的 CDN 节点（可配置数量）
+- ✅ **备注分组**：根据入站备注自动智能分组并启用负载均衡
+- ✅ **路径同步**：自动读取入站 WebSocket 路径配置（无需手动设置）
+- ✅ **端口适配**：强制使用 443 端口，完美适配 Cloudflare CDN
+- ✅ **隐藏端口**：可选开关移除订阅链接端口号（适用于 HTTPS 回源）
+- ✅ **规则代理**：集成 Loyalsoldier/clash-rules，自动缓存并代理规则文件
+
+**配置位置**：面板设置 → 订阅设置 → Clash 订阅配置
 
 ## 快速开始
 
@@ -63,11 +74,12 @@ x-ui uninstall    # 卸载面板
 
 ## 版本说明
 
-当前版本：**v2.8.23-0verf1ow**
+当前版本：**v2.8.40-0verf1ow**
 
 - 基于 MHSanaei/3x-ui 项目
 - 由 **0verf1ow** 维护和增强
 - 添加了主从节点同步功能
+- 集成了 Clash 定制订阅生成器
 - 优化了用户体验和界面提示
 
 ## 完整文档
