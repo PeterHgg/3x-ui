@@ -799,6 +799,7 @@
             subURI: subURI,
             subJsonURI: subJsonURI,
             subJsonEnable: subJsonEnable,
+            clashCount: clashCount,
           };
           this.pageSize = pageSize;
           this.remarkModel = remarkModel;
@@ -1177,7 +1178,7 @@
           settings: '{"clients": [' + clients.toString() + ']}',
         };
         await this.submit(`/panel/api/inbounds/addClient`, data, modal);
-        
+
         // Check if this inbound has slave nodes and show sync progress
         await this.checkAndShowSyncProgress(dbInboundId);
       },
@@ -1187,14 +1188,14 @@
           settings: '{"clients": [' + client.toString() + ']}',
         };
         await this.submit(`/panel/api/inbounds/updateClient/${clientId}`, data, clientModal);
-        
+
         // Check if this inbound has slave nodes and show sync progress
         await this.checkAndShowSyncProgress(dbInboundId);
       },
       async checkAndShowSyncProgress(inboundId) {
         // Check if there are slave nodes for this inbound
         const hasSlaves = this.dbInbounds.some(inbound => inbound.syncSourceId === inboundId);
-        
+
         if (hasSlaves) {
           const hide = this.$message.loading('正在同步到从节点...', 0);
           await new Promise(resolve => setTimeout(resolve, 1500));

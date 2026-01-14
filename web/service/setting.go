@@ -703,6 +703,7 @@ func (s *SettingService) GetDefaultSettings(host string) (any, error) {
 		"remarkModel":   func() (any, error) { return s.GetRemarkModel() },
 		"datepicker":    func() (any, error) { return s.GetDatepicker() },
 		"ipLimitEnable": func() (any, error) { return s.GetIpLimitEnable() },
+		"clashCount":    func() (any, error) { return s.GetClashCount() },
 	}
 
 	result := make(map[string]any)

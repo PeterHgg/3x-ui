@@ -281,7 +281,7 @@
         }
 
         // 添加默认参数
-        link += '&count=28';
+        link += '&count=' + (app.subSettings.clashCount || 28);
 
         return link;
       },
