@@ -232,8 +232,18 @@ func (a *SUBController) generateClash(c *gin.Context) {
 	}
 
 	// 生成配置
-	origin := fmt.Sprintf("%s://%s:%d", a.getScheme(c), subDomain, subPort)
-	config, err := a.clashService.GenerateClashConfig(uuid, password, domain, countInt, prefix, origin, subPort)
+	// 获取订阅 URI（用于 rule-providers，不含端口）
+	subURI, err := settingService.GetSubURI()
+	if err != nil || subURI == "" {
+		// 如果没有配置订阅 URI，构造默认的（不含端口）
+		subURI = fmt.Sprintf("%s://%s", a.getScheme(c), subDomain)
+	}
+	// 移除 URI 末尾的路径（如 /sub/）
+	if idx := strings.LastIndex(subURI, "/"); idx > 8 { // 8 = len("https://")
+		subURI = subURI[:idx]
+	}
+
+	config, err := a.clashService.GenerateClashConfig(uuid, password, domain, countInt, prefix, subURI, subPort)
 	if err != nil {
 		c.String(500, "生成配置失败: %v", err)
 		return
