@@ -200,7 +200,7 @@ func (s *ClashService) createVMessProxy(inbound *model.Inbound, cdnServer, nodeT
 		Name:    name,
 		Type:    "vmess",
 		Server:  cdnServer,
-		Port:    subPort,
+		Port:    443,
 		UUID:    uuid,
 		AlterID: 0,
 		Cipher:  "auto",
@@ -237,7 +237,7 @@ func (s *ClashService) createTrojanProxy(inbound *model.Inbound, cdnServer, node
 		Name:           name,
 		Type:           "trojan",
 		Server:         cdnServer,
-		Port:           subPort,
+		Port:           443,
 		Password:       password,
 		SkipCertVerify: true,
 		UDP:            true,
@@ -250,61 +250,58 @@ func (s *ClashService) createTrojanProxy(inbound *model.Inbound, cdnServer, node
 
 // 生成代理组
 func (s *ClashService) generateProxyGroups(proxies []ClashProxy) []ClashProxyGroup {
-	// 按类型分类节点
-	var defaultNodes, rnNodes, scNodes, warpNodes []string
+	// 按后缀分类节点
+	groupMap := make(map[string][]string)
+	groupOrder := []string{} // 保持顺序
 
 	for _, proxy := range proxies {
-		if strings.HasSuffix(proxy.Name, "-RN") {
-			rnNodes = append(rnNodes, proxy.Name)
-		} else if strings.HasSuffix(proxy.Name, "-SC") {
-			scNodes = append(scNodes, proxy.Name)
-		} else if strings.HasSuffix(proxy.Name, "-WARP") {
-			warpNodes = append(warpNodes, proxy.Name)
+		// 提取后缀（如 -RN, -SC, -WARP）
+		parts := strings.Split(proxy.Name, "-")
+		var groupKey string
+		if len(parts) > 1 {
+			groupKey = parts[len(parts)-1] // 最后一部分作为分组key
 		} else {
-			defaultNodes = append(defaultNodes, proxy.Name)
+			groupKey = "Default" // 没有后缀的归为Default
 		}
+
+		if _, exists := groupMap[groupKey]; !exists {
+			groupOrder = append(groupOrder, groupKey)
+		}
+		groupMap[groupKey] = append(groupMap[groupKey], proxy.Name)
 	}
 
-	groups := []ClashProxyGroup{
-		{
-			Name:     "🚀 手动切换",
-			Type:     "select",
-			Proxies:  []string{"☁️ 智能分流节点", "🇺🇸 美国优质节点", "🇺🇸 美国高速节点", "🇪🇺 荷兰纯净节点"},
-			URL:      "http://cp.cloudflare.com/generate_204",
-			Interval: 300,
-		},
-		{
-			Name:     "☁️ 智能分流节点",
+	// 创建代理组
+	groups := []ClashProxyGroup{}
+
+	// 1. 创建顶层 select 组，包含所有 load-balance 组
+	loadBalanceGroupNames := []string{}
+	for _, key := range groupOrder {
+		// 默认组名就是后缀名，后续可以从设置中读取自定义名称
+		groupName := key
+		loadBalanceGroupNames = append(loadBalanceGroupNames, groupName)
+	}
+
+	groups = append(groups, ClashProxyGroup{
+		Name:     "🚀 手动切换",
+		Type:     "select",
+		Proxies:  loadBalanceGroupNames,
+		URL:      "http://cp.cloudflare.com/generate_204",
+		Interval: 300,
+	})
+
+	// 2. 为每个分组创建 load-balance 组
+	for _, key := range groupOrder {
+		groupName := key // 默认名称
+		nodes := groupMap[key]
+
+		groups = append(groups, ClashProxyGroup{
+			Name:     groupName,
 			Type:     "load-balance",
-			Proxies:  defaultNodes,
+			Proxies:  nodes,
 			URL:      "http://cp.cloudflare.com/generate_204",
 			Interval: 300,
 			Strategy: "round-robin",
-		},
-		{
-			Name:     "🇺🇸 美国优质节点",
-			Type:     "load-balance",
-			Proxies:  warpNodes,
-			URL:      "http://cp.cloudflare.com/generate_204",
-			Interval: 300,
-			Strategy: "round-robin",
-		},
-		{
-			Name:     "🇺🇸 美国高速节点",
-			Type:     "load-balance",
-			Proxies:  rnNodes,
-			URL:      "http://cp.cloudflare.com/generate_204",
-			Interval: 300,
-			Strategy: "round-robin",
-		},
-		{
-			Name:     "🇪🇺 荷兰纯净节点",
-			Type:     "load-balance",
-			Proxies:  scNodes,
-			URL:      "http://cp.cloudflare.com/generate_204",
-			Interval: 300,
-			Strategy: "round-robin",
-		},
+		})
 	}
 
 	return groups
