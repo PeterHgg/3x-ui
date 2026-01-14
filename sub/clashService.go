@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mhsanaei/3x-ui/v2/database"
 	"github.com/mhsanaei/3x-ui/v2/database/model"
 )
 
@@ -82,7 +83,61 @@ func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, cou
 	}, nil
 }
 
-// ... (findNodes methods remain unchanged, skipped in this replacement for brevity if contiguous, but here we replace the block including generateCDNProxies) ...
+// 根据 UUID 查找节点
+func (s *ClashService) findNodesByUUID(uuid string) []*model.Inbound {
+	db := database.GetDB()
+	var allInbounds []*model.Inbound
+	db.Where("protocol = ?", "vmess").Find(&allInbounds)
+
+	var result []*model.Inbound
+	for _, inbound := range allInbounds {
+		var settings map[string]interface{}
+		if err := json.Unmarshal([]byte(inbound.Settings), &settings); err != nil {
+			continue
+		}
+
+		if clients, ok := settings["clients"].([]interface{}); ok {
+			for _, client := range clients {
+				if c, ok := client.(map[string]interface{}); ok {
+					if c["id"] == uuid {
+						result = append(result, inbound)
+						break
+					}
+				}
+			}
+		}
+	}
+
+	return result
+}
+
+// 根据密码查找节点
+func (s *ClashService) findNodesByPassword(password string) []*model.Inbound {
+	db := database.GetDB()
+	var allInbounds []*model.Inbound
+	db.Where("protocol = ?", "trojan").Find(&allInbounds)
+
+	var result []*model.Inbound
+	for _, inbound := range allInbounds {
+		var settings map[string]interface{}
+		if err := json.Unmarshal([]byte(inbound.Settings), &settings); err != nil {
+			continue
+		}
+
+		if clients, ok := settings["clients"].([]interface{}); ok {
+			for _, client := range clients {
+				if c, ok := client.(map[string]interface{}); ok {
+					if c["password"] == password {
+						result = append(result, inbound)
+						break
+					}
+				}
+			}
+		}
+	}
+
+	return result
+}
 
 // 生成 CDN 节点
 func (s *ClashService) generateCDNProxies(baseNodes []*model.Inbound, cdnDomain string, count int, prefix string, subPort int) map[string][]ClashProxy {
