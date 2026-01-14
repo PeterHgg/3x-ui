@@ -176,6 +176,21 @@ func (s *ClashService) generateCDNProxies(baseNodes []*model.Inbound, cdnDomain 
 	return proxies
 }
 
+// 获取 WebSocket 路径
+func (s *ClashService) getWebSocketPath(streamSettingsStr string) string {
+	var streamSettings map[string]interface{}
+	if err := json.Unmarshal([]byte(streamSettingsStr), &streamSettings); err != nil {
+		return "/"
+	}
+
+	if wsSettings, ok := streamSettings["wsSettings"].(map[string]interface{}); ok {
+		if path, ok := wsSettings["path"].(string); ok && path != "" {
+			return path
+		}
+	}
+	return "/"
+}
+
 // 创建 VMess 代理
 func (s *ClashService) createVMessProxy(inbound *model.Inbound, cdnServer, nodeType string, index int, prefix string, subPort int) ClashProxy {
 	var settings map[string]interface{}
@@ -208,7 +223,7 @@ func (s *ClashService) createVMessProxy(inbound *model.Inbound, cdnServer, nodeT
 		TLS:     true,
 		Network: "ws",
 		WSOptions: &ClashWSOptions{
-			Path: GetPathForType(nodeType),
+			Path: s.getWebSocketPath(inbound.StreamSettings),
 		},
 	}
 }
@@ -243,7 +258,7 @@ func (s *ClashService) createTrojanProxy(inbound *model.Inbound, cdnServer, node
 		UDP:            true,
 		Network:        "ws",
 		WSOptions: &ClashWSOptions{
-			Path: GetPathForType(nodeType),
+			Path: s.getWebSocketPath(inbound.StreamSettings),
 		},
 	}
 }

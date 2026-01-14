@@ -69,20 +69,6 @@ const (
 	NodeTypeWARP    = "cf"      // 路径 /cf
 )
 
-// 获取路径
-func GetPathForType(nodeType string) string {
-	paths := map[string]string{
-		NodeTypeDefault: "/",
-		NodeTypeRN:      "/rn",
-		NodeTypeSC:      "/sc",
-		NodeTypeWARP:    "/cf",
-	}
-	if path, ok := paths[nodeType]; ok {
-		return path
-	}
-	return "/"
-}
-
 // 获取节点后缀
 func GetSuffixForType(nodeType string) string {
 	suffixes := map[string]string{
