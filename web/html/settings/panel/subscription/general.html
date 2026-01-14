@@ -127,14 +127,6 @@
                     :style="{ width: '100%' }"></a-input-number>
             </template>
         </a-setting-list-item>
-        <a-setting-list-item paddings="small">
-            <template #title>代理组名称配置</template>
-            <template #description>JSON 格式配置每个节点的组名（如：{"RN":"美国高速节点","SC":"荷兰纯净节点","WARP":"美国优质节点"}）</template>
-            <template #control>
-                <a-textarea v-model="allSetting.clashGroupNames" placeholder='{"RN":"美国高速","SC":"荷兰纯净"}'
-                    :rows="3"></a-textarea>
-            </template>
-        </a-setting-list-item>
     </a-collapse-panel>
 </a-collapse>
 {{end}}

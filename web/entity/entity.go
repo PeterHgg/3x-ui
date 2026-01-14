@@ -77,10 +77,9 @@ type AllSetting struct {
 	SubJsonRules                string `json:"subJsonRules" form:"subJsonRules"`
 
 	// Clash subscription settings
-	ClashDomain     string `json:"clashDomain" form:"clashDomain"`         // Clash subscription domain
-	ClashPrefix     string `json:"clashPrefix" form:"clashPrefix"`         // CDN prefix for Clash nodes
-	ClashCount      int    `json:"clashCount" form:"clashCount"`           // Default CDN node count
-	ClashGroupNames string `json:"clashGroupNames" form:"clashGroupNames"` // JSON: custom group names mapping
+	ClashDomain string `json:"clashDomain" form:"clashDomain"` // Clash subscription domain
+	ClashPrefix string `json:"clashPrefix" form:"clashPrefix"` // CDN prefix for Clash nodes
+	ClashCount  int    `json:"clashCount" form:"clashCount"`   // Default CDN node count
 
 	// LDAP settings
 	LdapEnable     bool   `json:"ldapEnable" form:"ldapEnable"`
