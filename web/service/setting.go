@@ -781,5 +781,5 @@ func (s *SettingService) GetClashNoPort() (bool, error) {
 }
 
 func (s *SettingService) UpdateClashNoPort(noPort bool) error {
-	return s.saveOne("clashNoPort", noPort)
+	return s.setBool("clashNoPort", noPort)
 }
