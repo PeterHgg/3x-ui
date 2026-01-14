@@ -105,6 +105,9 @@
         </a-setting-list-item>
     </a-collapse-panel>
     <a-collapse-panel key="5" header="Clash 订阅配置">
+        <a-alert message="特别说明"
+            description="本配置专用于 Cloudflare 优选架构：自动批量生成指向 CF 的 CDN 节点，根据入站备注智能分组并启用负载均衡，且自动同步 WebSocket 路径与 443 端口。非通用订阅转换器。"
+            type="info" show-icon style="margin-bottom: 20px"></a-alert>
         <a-setting-list-item paddings="small">
             <template #title>Clash 主域名</template>
             <template #description>Clash 订阅 CDN 域名（例如：example.com），留空则使用订阅域名</template>
