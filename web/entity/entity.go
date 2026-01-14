@@ -76,6 +76,11 @@ type AllSetting struct {
 	SubJsonMux                  string `json:"subJsonMux" form:"subJsonMux"`                                   // JSON subscription mux configuration
 	SubJsonRules                string `json:"subJsonRules" form:"subJsonRules"`
 
+	// Clash subscription settings
+	ClashDomain string `json:"clashDomain" form:"clashDomain"` // Clash subscription domain
+	ClashPrefix string `json:"clashPrefix" form:"clashPrefix"` // CDN prefix for Clash nodes
+	ClashCount  int    `json:"clashCount" form:"clashCount"`   // Default CDN node count
+
 	// LDAP settings
 	LdapEnable     bool   `json:"ldapEnable" form:"ldapEnable"`
 	LdapHost       string `json:"ldapHost" form:"ldapHost"`
