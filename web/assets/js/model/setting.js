@@ -51,8 +51,8 @@ class AllSetting {
         // Clash settings
         this.clashDomain = "";
         this.clashSubDomain = "";
-        this.clashPrefix = "cdn";
-        this.clashCount = 28;
+        this.clashPrefix = "";
+        this.clashCount = 0;
         this.clashNoPort = false;
 
         this.timeLocation = "Local";
