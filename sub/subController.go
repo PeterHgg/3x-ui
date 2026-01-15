@@ -16,7 +16,6 @@ type SUBController struct {
 	subTitle       string
 	subPath        string
 	subJsonPath    string
-	clashSubPath   string
 	jsonEnabled    bool
 	showInfo       bool // Added based on constructor snippet
 	subEncrypt     bool
@@ -31,8 +30,7 @@ type SUBController struct {
 func NewSUBController(
 	g *gin.RouterGroup,
 	subPath,
-	subJsonPath,
-	clashSubPath string,
+	subJsonPath string,
 	jsonFragment,
 	jsonNoise,
 	jsonMux,
@@ -47,7 +45,6 @@ func NewSUBController(
 		subTitle:       subTitle, // Set subTitle from parameter
 		subPath:        subPath,
 		subJsonPath:    subJsonPath,
-		clashSubPath:   clashSubPath,
 		jsonEnabled:    jsonEnabled,
 		showInfo:       sub.showInfo,
 		subEncrypt:     encrypt,
@@ -66,11 +63,9 @@ func NewSUBController(
 func (a *SUBController) initRouter(g *gin.RouterGroup) {
 	gLink := g.Group(a.subPath)
 	gLink.GET(":subid", a.subs)
-
-	// Clash 订阅路由（使用独立的 clashSubPath）
-	gClash := g.Group(a.clashSubPath)
-	gClash.GET("generate", a.generateClash)
-	gClash.GET("rules/:type", a.getClashRules)
+	// Clash 订阅路由（使用通用订阅路径）
+	gLink.GET("generate", a.generateClash)
+	gLink.GET("rules/:type", a.getClashRules)
 
 	if a.jsonEnabled {
 		gJson := g.Group(a.subJsonPath)

@@ -153,11 +153,6 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 		SubTitle = ""
 	}
 
-	ClashSubPath, err := s.settingService.GetClashSubPath()
-	if err != nil {
-		ClashSubPath = "/clash/"
-	}
-
 	// set per-request localizer from headers/cookies
 	engine.Use(locale.LocalizerMiddleware())
 
@@ -241,7 +236,6 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 		g,
 		LinksPath,
 		JsonPath,
-		ClashSubPath,
 		SubJsonFragment,
 		SubJsonNoises,
 		SubJsonMux,
