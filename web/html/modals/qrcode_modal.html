@@ -39,7 +39,7 @@
         </tr-qr-bg>
       </tr-qr-box>
     </template>
-    <tr-qr-box class="qr-box" v-if="clashSubLink">
+    <tr-qr-box class="qr-box" v-if="app.subSettings?.enable && clashSubLink">
       <a-tag color="orange" class="qr-tag"><span>Clash 订阅</span></a-tag>
       <tr-qr-bg class="qr-bg-sub">
         <tr-qr-bg-inner class="qr-bg-sub-inner">
