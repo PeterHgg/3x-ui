@@ -39,7 +39,7 @@
         </tr-qr-bg>
       </tr-qr-box>
     </template>
-    <tr-qr-box class="qr-box" v-if="clashSubLink">
+    <tr-qr-box class="qr-box" v-if="app.subSettings?.enable && clashSubLink">
       <a-tag color="orange" class="qr-tag"><span>Clash 订阅</span></a-tag>
       <tr-qr-bg class="qr-bg-sub">
         <tr-qr-bg-inner class="qr-bg-sub-inner">
@@ -256,17 +256,22 @@
 
         if (!client || !inbound) return '';
 
-        // 使用订阅 URI 作为基础
-        const subURI = app.subSettings.subURI || window.location.origin;
-        // 提取基础 URL 和路径
-        const url = new URL(subURI);
+        // 使用 Clash 专用域名（独立于通用订阅域名）
+        const clashDomain = app.subSettings.clashDomain || window.location.hostname;
+        const protocol = window.location.protocol;
+        let clashURI = `${protocol}//${clashDomain}`;
 
-        // 如果开启了隐藏端口，则移除端口信息
-        if (app.subSettings.clashNoPort) {
-          url.port = '';
+        // 如果未开启隐藏端口，使用订阅端口
+        if (!app.subSettings.clashNoPort) {
+          const port = app.subSettings.subPort || window.location.port;
+          if (port) {
+            clashURI += `:${port}`;
+          }
         }
 
-        const basePath = url.pathname.replace(/\/[^\/]*$/, '/'); // 保留路径，移除最后的子路径
+        // 构建完整URL
+        const url = new URL(clashURI);
+        const basePath = '/sub/'; // Clash订阅固定路径
         let link = url.origin + basePath + 'generate?';
 
         // 根据协议提取 UUID 或密码
