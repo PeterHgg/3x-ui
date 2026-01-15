@@ -290,6 +290,19 @@ func (s *Server) Start() (err error) {
 	if err != nil {
 		return err
 	}
+
+	// 如果订阅服务没有配置专用证书，则使用面板通用证书
+	if certFile == "" || keyFile == "" {
+		defaultCert, err := s.settingService.GetCertFile()
+		if err == nil && defaultCert != "" {
+			certFile = defaultCert
+		}
+		defaultKey, err := s.settingService.GetKeyFile()
+		if err == nil && defaultKey != "" {
+			keyFile = defaultKey
+		}
+	}
+
 	listen, err := s.settingService.GetSubListen()
 	if err != nil {
 		return err
