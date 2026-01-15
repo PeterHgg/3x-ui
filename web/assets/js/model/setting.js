@@ -51,6 +51,7 @@ class AllSetting {
         // Clash settings
         this.clashDomain = "";
         this.clashSubDomain = "";
+        this.clashSubPath = "/clash/";
         this.clashPrefix = "cdn";
         this.clashCount = 28;
         this.clashNoPort = false;

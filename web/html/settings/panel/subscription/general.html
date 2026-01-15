@@ -108,17 +108,24 @@
         <a-alert message="特别说明" description="本配置专用于 Cloudflare 优选架构，非通用订阅转换器。" type="info" show-icon
             style="margin-bottom: 20px"></a-alert>
         <a-setting-list-item paddings="small">
-            <template #title>Clash 主域名</template>
+            <template #title>优选域名</template>
             <template #description>Clash 配置文件中节点的域名（例如：example.com），留空则使用订阅域名</template>
             <template #control>
                 <a-input type="text" v-model="allSetting.clashDomain" placeholder="example.com"></a-input>
             </template>
         </a-setting-list-item>
         <a-setting-list-item paddings="small">
-            <template #title>Clash 订阅域名</template>
+            <template #title>订阅域名</template>
             <template #description>生成订阅链接的域名（例如：sub.example.com），留空则使用当前访问域名</template>
             <template #control>
                 <a-input type="text" v-model="allSetting.clashSubDomain" placeholder="sub.example.com"></a-input>
+            </template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>订阅路径</template>
+            <template #description>Clash 订阅路径（例如：/clash/），与通用订阅路径区分</template>
+            <template #control>
+                <a-input type="text" v-model="allSetting.clashSubPath" placeholder="/clash/"></a-input>
             </template>
         </a-setting-list-item>
         <a-setting-list-item paddings="small">

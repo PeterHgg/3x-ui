@@ -97,6 +97,7 @@ var defaultValueMap = map[string]string{
 	// Clash subscription defaults
 	"clashDomain":    "",
 	"clashSubDomain": "",
+	"clashSubPath":   "/clash/",
 	"clashPrefix":    "cdn",
 	"clashCount":     "28",
 	"clashNoPort":    "false",
@@ -707,6 +708,7 @@ func (s *SettingService) GetDefaultSettings(host string) (any, error) {
 		"ipLimitEnable":  func() (any, error) { return s.GetIpLimitEnable() },
 		"clashDomain":    func() (any, error) { return s.GetClashDomain() },
 		"clashSubDomain": func() (any, error) { return s.GetClashSubDomain() },
+		"clashSubPath":   func() (any, error) { return s.GetClashSubPath() },
 		"clashPrefix":    func() (any, error) { return s.GetClashPrefix() },
 		"clashCount":     func() (any, error) { return s.GetClashCount() },
 		"clashNoPort":    func() (any, error) { return s.GetClashNoPort() },
@@ -784,6 +786,14 @@ func (s *SettingService) GetClashSubDomain() (string, error) {
 
 func (s *SettingService) UpdateClashSubDomain(domain string) error {
 	return s.setString("clashSubDomain", domain)
+}
+
+func (s *SettingService) GetClashSubPath() (string, error) {
+	return s.getString("clashSubPath")
+}
+
+func (s *SettingService) UpdateClashSubPath(path string) error {
+	return s.setString("clashSubPath", path)
 }
 
 func (s *SettingService) GetClashPrefix() (string, error) {

@@ -261,17 +261,15 @@
         const protocol = window.location.protocol;
         let clashURI = `${protocol}//${clashSubDomain}`;
 
-        // 如果未开启隐藏端口，使用订阅端口
-        if (!app.subSettings.clashNoPort) {
-          const port = app.subSettings.subPort || window.location.port;
-          if (port) {
-            clashURI += `:${port}`;
-          }
+        // 端口使用订阅服务端口（与通用订阅保持一致）
+        const port = app.subSettings.subPort || window.location.port;
+        if (!app.subSettings.clashNoPort && port) {
+          clashURI += `:${port}`;
         }
 
-        // 构建完整URL
+        // 构建完整URL - 使用独立的Clash订阅路径
         const url = new URL(clashURI);
-        const basePath = '/sub/'; // Clash订阅固定路径
+        const basePath = app.subSettings.clashSubPath || '/clash/';
         let link = url.origin + basePath + 'generate?';
 
         // 根据协议提取 UUID 或密码
