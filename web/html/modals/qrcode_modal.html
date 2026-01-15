@@ -256,8 +256,20 @@
 
         if (!client || !inbound) return '';
 
-        // 使用订阅 URI 作为基础
-        const subURI = app.subSettings.subURI || window.location.origin;
+        // 使用 Clash 订阅域名（如果配置了），否则使用订阅 URI
+        const clashSubDomain = app.subSettings.clashSubDomain;
+        let subURI;
+
+        if (clashSubDomain) {
+          // 如果配置了 Clash 订阅域名，构建新的 URI
+          const protocol = window.location.protocol;
+          const port = app.subSettings.subPort || window.location.port;
+          subURI = `${protocol}//${clashSubDomain}${port ? ':' + port : ''}`;
+        } else {
+          // 使用原有的订阅 URI
+          subURI = app.subSettings.subURI || window.location.origin;
+        }
+
         // 提取基础 URL 和路径
         const url = new URL(subURI);
 

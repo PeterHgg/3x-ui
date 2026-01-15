@@ -77,10 +77,11 @@ type AllSetting struct {
 	SubJsonRules                string `json:"subJsonRules" form:"subJsonRules"`
 
 	// Clash subscription settings
-	ClashDomain string `json:"clashDomain" form:"clashDomain"` // Clash subscription domain
-	ClashPrefix string `json:"clashPrefix" form:"clashPrefix"` // CDN prefix for Clash nodes
-	ClashCount  int    `json:"clashCount" form:"clashCount"`   // Default CDN node count
-	ClashNoPort bool   `json:"clashNoPort" form:"clashNoPort"` // Hide port in subscription URL
+	ClashDomain    string `json:"clashDomain" form:"clashDomain"`       // Clash subscription domain
+	ClashSubDomain string `json:"clashSubDomain" form:"clashSubDomain"` // Clash subscription link domain
+	ClashPrefix    string `json:"clashPrefix" form:"clashPrefix"`       // CDN prefix for Clash nodes
+	ClashCount     int    `json:"clashCount" form:"clashCount"`         // Default CDN node count
+	ClashNoPort    bool   `json:"clashNoPort" form:"clashNoPort"`       // Hide port in subscription URL
 
 	// LDAP settings
 	LdapEnable     bool   `json:"ldapEnable" form:"ldapEnable"`

@@ -95,10 +95,11 @@ var defaultValueMap = map[string]string{
 	"ldapDefaultExpiryDays": "0",
 	"ldapDefaultLimitIP":    "0",
 	// Clash subscription defaults
-	"clashDomain": "",
-	"clashPrefix": "cdn",
-	"clashCount":  "28",
-	"clashNoPort": "false",
+	"clashDomain":    "",
+	"clashSubDomain": "",
+	"clashPrefix":    "cdn",
+	"clashCount":     "28",
+	"clashNoPort":    "false",
 }
 
 // SettingService provides business logic for application settings management.
@@ -770,13 +771,34 @@ func (s *SettingService) GetClashDomain() (string, error) {
 	return s.getString("clashDomain")
 }
 
+func (s *SettingService) UpdateClashDomain(domain string) error {
+	return s.setString("clashDomain", domain)
+}
+
+func (s *SettingService) GetClashSubDomain() (string, error) {
+	return s.getString("clashSubDomain")
+}
+
+func (s *SettingService) UpdateClashSubDomain(domain string) error {
+	return s.setString("clashSubDomain", domain)
+}
+
 func (s *SettingService) GetClashPrefix() (string, error) {
 	return s.getString("clashPrefix")
+}
+
+func (s *SettingService) UpdateClashPrefix(prefix string) error {
+	return s.setString("clashPrefix", prefix)
 }
 
 func (s *SettingService) GetClashCount() (int, error) {
 	return s.getInt("clashCount")
 }
+
+func (s *SettingService) UpdateClashCount(count int) error {
+	return s.setInt("clashCount", count)
+}
+
 func (s *SettingService) GetClashNoPort() (bool, error) {
 	return s.getBool("clashNoPort")
 }
