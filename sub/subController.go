@@ -16,7 +16,9 @@ type SUBController struct {
 	subTitle       string
 	subPath        string
 	subJsonPath    string
+	clashSubPath   string
 	jsonEnabled    bool
+	showInfo       bool // Added based on constructor snippet
 	subEncrypt     bool
 	updateInterval string
 
@@ -25,28 +27,29 @@ type SUBController struct {
 	clashService   *ClashService
 }
 
-// NewSUBController creates a new subscription controller with the given configuration.
+// NewSUBController creates a new instance of SUBController, configured with provided parameters.
 func NewSUBController(
 	g *gin.RouterGroup,
-	subPath string,
-	jsonPath string,
-	jsonEnabled bool,
-	encrypt bool,
-	showInfo bool,
-	rModel string,
-	update string,
-	jsonFragment string,
-	jsonNoise string,
-	jsonMux string,
+	subPath,
+	subJsonPath,
+	clashSubPath string,
+	jsonFragment,
+	jsonNoise,
+	jsonMux,
 	jsonRules string,
-	subTitle string,
+	update string, // Changed type to string based on original
+	encrypt,
+	jsonEnabled bool,
+	sub *SubService,
+	subTitle string, // Kept subTitle as a parameter to set the field
 ) *SUBController {
-	sub := NewSubService(showInfo, rModel)
 	a := &SUBController{
-		subTitle:       subTitle,
+		subTitle:       subTitle, // Set subTitle from parameter
 		subPath:        subPath,
-		subJsonPath:    jsonPath,
+		subJsonPath:    subJsonPath,
+		clashSubPath:   clashSubPath,
 		jsonEnabled:    jsonEnabled,
+		showInfo:       sub.showInfo,
 		subEncrypt:     encrypt,
 		updateInterval: update,
 
@@ -63,9 +66,11 @@ func NewSUBController(
 func (a *SUBController) initRouter(g *gin.RouterGroup) {
 	gLink := g.Group(a.subPath)
 	gLink.GET(":subid", a.subs)
-	// Clash 订阅路由（也使用 subPath）
-	gLink.GET("generate", a.generateClash)
-	gLink.GET("rules/:type", a.getClashRules)
+
+	// Clash 订阅路由（使用独立的 clashSubPath）
+	gClash := g.Group(a.clashSubPath)
+	gClash.GET("generate", a.generateClash)
+	gClash.GET("rules/:type", a.getClashRules)
 
 	if a.jsonEnabled {
 		gJson := g.Group(a.subJsonPath)
