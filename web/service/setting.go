@@ -705,6 +705,9 @@ func (s *SettingService) GetDefaultSettings(host string) (any, error) {
 		"remarkModel":   func() (any, error) { return s.GetRemarkModel() },
 		"datepicker":    func() (any, error) { return s.GetDatepicker() },
 		"ipLimitEnable": func() (any, error) { return s.GetIpLimitEnable() },
+		"clashDomain":   func() (any, error) { return s.GetClashDomain() },
+		"clashSubDomain": func() (any, error) { return s.GetClashSubDomain() },
+		"clashPrefix":   func() (any, error) { return s.GetClashPrefix() },
 		"clashCount":    func() (any, error) { return s.GetClashCount() },
 		"clashNoPort":   func() (any, error) { return s.GetClashNoPort() },
 	}
