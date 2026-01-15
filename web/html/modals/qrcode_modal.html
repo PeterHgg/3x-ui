@@ -256,10 +256,10 @@
 
         if (!client || !inbound) return '';
 
-        // 使用 Clash 专用域名（独立于通用订阅域名）
-        const clashDomain = app.subSettings.clashDomain || window.location.hostname;
+        // 使用 Clash 订阅域名（独立于节点域名）
+        const clashSubDomain = app.subSettings.clashSubDomain || window.location.hostname;
         const protocol = window.location.protocol;
-        let clashURI = `${protocol}//${clashDomain}`;
+        let clashURI = `${protocol}//${clashSubDomain}`;
 
         // 如果未开启隐藏端口，使用订阅端口
         if (!app.subSettings.clashNoPort) {
