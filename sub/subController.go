@@ -288,24 +288,13 @@ func (a *SUBController) generateClash(c *gin.Context) {
 						email = e
 					}
 
-					// 获取流量统计
-					if clientStats, ok := inbound.ClientStats.([]interface{}); ok {
-						for _, stat := range clientStats {
-							if s, ok := stat.(map[string]interface{}); ok {
-								statEmail, _ := s["email"].(string)
-								if statEmail == email {
-									if up, ok := s["up"].(int64); ok {
-										upload += up
-									}
-									if down, ok := s["down"].(int64); ok {
-										download += down
-									}
-									if t, ok := s["total"].(int64); ok {
-										total = t
-									}
-									break
-								}
-							}
+					// 获取流量统计 - ClientStats是[]xray.ClientTraffic类型
+					for _, stat := range inbound.ClientStats {
+						if stat.Email == email {
+							upload += stat.Up
+							download += stat.Down
+							total = stat.Total
+							break
 						}
 					}
 					break
