@@ -100,6 +100,30 @@ var defaultValueMap = map[string]string{
 	"clashPrefix":    "",
 	"clashCount":     "0",
 	"clashNoPort":    "false",
+	"clashCustomRules": `DOMAIN-SUFFIX,szbdyd.com,REJECT
+DOMAIN-SUFFIX,mcdn.bilivideo.com,REJECT
+DOMAIN-SUFFIX,mcdn.bilivideo.cn,REJECT
+DOMAIN-SUFFIX,edge.mountaintoys.cn,REJECT
+DOMAIN-SUFFIX,scaleway.com,DIRECT
+DOMAIN-SUFFIX,linux.do,🚀 手动切换
+DOMAIN-SUFFIX,epicgames.com,DIRECT
+DOMAIN-SUFFIX,epicgames.dev,DIRECT
+DOMAIN-SUFFIX,epicgames.net,DIRECT
+DOMAIN-SUFFIX,unrealengine.com,DIRECT
+DOMAIN,steamcdn-a.akamaihd.net,DIRECT
+DOMAIN-SUFFIX,cm.steampowered.com,DIRECT
+DOMAIN-SUFFIX,steamserver.net,DIRECT
+DOMAIN,steam-chat.com,🚀 手动切换
+DOMAIN-SUFFIX,steamstatic.com,🚀 手动切换
+DOMAIN,api.steampowered.com,🚀 手动切换
+DOMAIN,store.steampowered.com,🚀 手动切换
+DOMAIN-SUFFIX,steamcommunity.com,🚀 手动切换
+DOMAIN-SUFFIX,steamgames.com,DIRECT
+DOMAIN-SUFFIX,steamusercontent.com,DIRECT
+DOMAIN-SUFFIX,steamcontent.com,🚀 手动切换
+DOMAIN-SUFFIX,steamstatic.com,DIRECT
+DOMAIN-SUFFIX,steamcdn-a.akamaihd.net,DIRECT
+DOMAIN-SUFFIX,steamstat.us,DIRECT`,
 }
 
 // SettingService provides business logic for application settings management.
@@ -691,25 +715,26 @@ func (s *SettingService) GetDefaultXrayConfig() (any, error) {
 func (s *SettingService) GetDefaultSettings(host string) (any, error) {
 	type settingFunc func() (any, error)
 	settings := map[string]settingFunc{
-		"expireDiff":     func() (any, error) { return s.GetExpireDiff() },
-		"trafficDiff":    func() (any, error) { return s.GetTrafficDiff() },
-		"pageSize":       func() (any, error) { return s.GetPageSize() },
-		"defaultCert":    func() (any, error) { return s.GetCertFile() },
-		"defaultKey":     func() (any, error) { return s.GetKeyFile() },
-		"tgBotEnable":    func() (any, error) { return s.GetTgbotEnabled() },
-		"subEnable":      func() (any, error) { return s.GetSubEnable() },
-		"subJsonEnable":  func() (any, error) { return s.GetSubJsonEnable() },
-		"subTitle":       func() (any, error) { return s.GetSubTitle() },
-		"subURI":         func() (any, error) { return s.GetSubURI() },
-		"subJsonURI":     func() (any, error) { return s.GetSubJsonURI() },
-		"remarkModel":    func() (any, error) { return s.GetRemarkModel() },
-		"datepicker":     func() (any, error) { return s.GetDatepicker() },
-		"ipLimitEnable":  func() (any, error) { return s.GetIpLimitEnable() },
-		"clashDomain":    func() (any, error) { return s.GetClashDomain() },
-		"clashSubDomain": func() (any, error) { return s.GetClashSubDomain() },
-		"clashPrefix":    func() (any, error) { return s.GetClashPrefix() },
-		"clashCount":     func() (any, error) { return s.GetClashCount() },
-		"clashNoPort":    func() (any, error) { return s.GetClashNoPort() },
+		"expireDiff":       func() (any, error) { return s.GetExpireDiff() },
+		"trafficDiff":      func() (any, error) { return s.GetTrafficDiff() },
+		"pageSize":         func() (any, error) { return s.GetPageSize() },
+		"defaultCert":      func() (any, error) { return s.GetCertFile() },
+		"defaultKey":       func() (any, error) { return s.GetKeyFile() },
+		"tgBotEnable":      func() (any, error) { return s.GetTgbotEnabled() },
+		"subEnable":        func() (any, error) { return s.GetSubEnable() },
+		"subJsonEnable":    func() (any, error) { return s.GetSubJsonEnable() },
+		"subTitle":         func() (any, error) { return s.GetSubTitle() },
+		"subURI":           func() (any, error) { return s.GetSubURI() },
+		"subJsonURI":       func() (any, error) { return s.GetSubJsonURI() },
+		"remarkModel":      func() (any, error) { return s.GetRemarkModel() },
+		"datepicker":       func() (any, error) { return s.GetDatepicker() },
+		"ipLimitEnable":    func() (any, error) { return s.GetIpLimitEnable() },
+		"clashDomain":      func() (any, error) { return s.GetClashDomain() },
+		"clashSubDomain":   func() (any, error) { return s.GetClashSubDomain() },
+		"clashPrefix":      func() (any, error) { return s.GetClashPrefix() },
+		"clashCount":       func() (any, error) { return s.GetClashCount() },
+		"clashNoPort":      func() (any, error) { return s.GetClashNoPort() },
+		"clashCustomRules": func() (any, error) { return s.GetClashCustomRules() },
 	}
 
 	result := make(map[string]any)
@@ -808,4 +833,12 @@ func (s *SettingService) GetClashNoPort() (bool, error) {
 
 func (s *SettingService) UpdateClashNoPort(noPort bool) error {
 	return s.setBool("clashNoPort", noPort)
+}
+
+func (s *SettingService) GetClashCustomRules() (string, error) {
+	return s.getString("clashCustomRules")
+}
+
+func (s *SettingService) UpdateClashCustomRules(rules string) error {
+	return s.setString("clashCustomRules", rules)
 }

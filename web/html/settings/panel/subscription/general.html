@@ -137,6 +137,14 @@
             </template>
         </a-setting-list-item>
         <a-setting-list-item paddings="small">
+            <template #title>自定义规则</template>
+            <template #description>自定义 Clash 规则（每行一条），这些规则会插入在 Cloudflare IP 直连规则之后、基础规则之前</template>
+            <template #control>
+                <a-textarea v-model="allSetting.clashCustomRules" :rows="10" placeholder="DOMAIN-SUFFIX,example.com,🚀 手动切换
+DOMAIN,api.example.com,DIRECT" style="font-family: monospace; width: 100%"></a-textarea>
+            </template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
             <template #title>隐藏端口 (Hide Port)</template>
             <template #description>生成订阅链接时不带端口（默认 443），适用于已配置 HTTPS 回源的情况</template>
             <template #control>

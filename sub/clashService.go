@@ -37,7 +37,7 @@ func NewClashService() *ClashService {
 }
 
 // 生成 Clash 配置
-func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, count int, prefix, origin string, subPort int) (*ClashConfig, error) {
+func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, count int, prefix, origin string, subPort int, customRules string) (*ClashConfig, error) {
 	var baseNodes []*model.Inbound
 
 	if uuid != "" {
@@ -59,8 +59,8 @@ func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, cou
 	// 生成规则提供者
 	ruleProviders := s.generateRuleProviders(origin)
 
-	// 生成固定规则
-	rules := s.generateRules()
+	// 生成规则（合并自定义规则）
+	rules := s.generateRules(customRules)
 
 	// 展平所有代理用于配置文件
 	var allProxies []ClashProxy
@@ -283,8 +283,6 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy) [
 			Name:     groupName,
 			Type:     "load-balance",
 			Proxies:  proxyNames,
-			URL:      "http://cp.cloudflare.com/generate_204",
-			Interval: 300,
 			Strategy: "round-robin",
 		})
 
@@ -294,11 +292,9 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy) [
 	// 创建顶层 select 组
 	// 将 "手动切换" 放在最前面
 	selectGroup := ClashProxyGroup{
-		Name:     "🚀 手动切换",
-		Type:     "select",
-		Proxies:  loadBalanceGroupNames,
-		URL:      "http://cp.cloudflare.com/generate_204",
-		Interval: 300,
+		Name:    "🚀 手动切换",
+		Type:    "select",
+		Proxies: loadBalanceGroupNames,
 	}
 
 	// 将 selectGroup 插入到 groups 的第一个位置
@@ -341,9 +337,12 @@ func (s *ClashService) generateRuleProviders(origin string) map[string]ClashRule
 	}
 }
 
-// 生成固定规则
-func (s *ClashService) generateRules() []string {
-	return []string{
+// 生成规则（合并自定义规则和固定规则）
+func (s *ClashService) generateRules(customRules string) []string {
+	var rules []string
+
+	// Cloudflare IP 直连（固定规则）
+	rules = append(rules,
 		"IP-CIDR,104.21.16.1/32,DIRECT,no-resolve",
 		"IP-CIDR,104.21.48.1/32,DIRECT,no-resolve",
 		"IP-CIDR,104.21.112.1/32,DIRECT,no-resolve",
@@ -353,30 +352,21 @@ func (s *ClashService) generateRules() []string {
 		"IP-CIDR,104.21.80.1/32,DIRECT,no-resolve",
 		"IP-CIDR,104.21.4.71/32,DIRECT,no-resolve",
 		"IP-CIDR,172.67.131.193/32,DIRECT,no-resolve",
-		"DOMAIN-SUFFIX,szbdyd.com,REJECT",
-		"DOMAIN-SUFFIX,mcdn.bilivideo.com,REJECT",
-		"DOMAIN-SUFFIX,mcdn.bilivideo.cn,REJECT",
-		"DOMAIN-SUFFIX,edge.mountaintoys.cn,REJECT",
-		"DOMAIN-SUFFIX,scaleway.com,DIRECT",
-		"DOMAIN-SUFFIX,linux.do,🚀 手动切换",
-		"DOMAIN-SUFFIX,epicgames.com,DIRECT",
-		"DOMAIN-SUFFIX,epicgames.dev,DIRECT",
-		"DOMAIN-SUFFIX,epicgames.net,DIRECT",
-		"DOMAIN-SUFFIX,unrealengine.com,DIRECT",
-		"DOMAIN,steamcdn-a.akamaihd.net,DIRECT",
-		"DOMAIN-SUFFIX,cm.steampowered.com,DIRECT",
-		"DOMAIN-SUFFIX,steamserver.net,DIRECT",
-		"DOMAIN,steam-chat.com,🚀 手动切换",
-		"DOMAIN-SUFFIX,steamstatic.com,🚀 手动切换",
-		"DOMAIN,api.steampowered.com,🚀 手动切换",
-		"DOMAIN,store.steampowered.com,🚀 手动切换",
-		"DOMAIN-SUFFIX,steamcommunity.com,🚀 手动切换",
-		"DOMAIN-SUFFIX,steamgames.com,DIRECT",
-		"DOMAIN-SUFFIX,steamusercontent.com,DIRECT",
-		"DOMAIN-SUFFIX,steamcontent.com,🚀 手动切换",
-		"DOMAIN-SUFFIX,steamstatic.com,DIRECT",
-		"DOMAIN-SUFFIX,steamcdn-a.akamaihd.net,DIRECT",
-		"DOMAIN-SUFFIX,steamstat.us,DIRECT",
+	)
+
+	// 添加自定义规则
+	if customRules != "" {
+		lines := strings.Split(customRules, "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line != "" && !strings.HasPrefix(line, "#") {
+				rules = append(rules, line)
+			}
+		}
+	}
+
+	// 添加固定的基础规则
+	rules = append(rules,
 		"DOMAIN-SUFFIX,ip6-localhost,DIRECT",
 		"DOMAIN-SUFFIX,ip6-loopback,DIRECT",
 		"DOMAIN-SUFFIX,lan,DIRECT",
@@ -401,7 +391,9 @@ func (s *ClashService) generateRules() []string {
 		"GEOIP,LAN,DIRECT",
 		"GEOIP,CN,DIRECT",
 		"MATCH,🚀 手动切换",
-	}
+	)
+
+	return rules
 }
 
 // 获取规则

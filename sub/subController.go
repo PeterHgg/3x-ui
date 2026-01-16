@@ -243,7 +243,13 @@ func (a *SUBController) generateClash(c *gin.Context) {
 		subURI = subURI[:idx]
 	}
 
-	config, err := a.clashService.GenerateClashConfig(uuid, password, domain, countInt, prefix, subURI, subPort)
+	// 获取自定义规则
+	customRules, err := settingService.GetClashCustomRules()
+	if err != nil {
+		customRules = ""
+	}
+
+	config, err := a.clashService.GenerateClashConfig(uuid, password, domain, countInt, prefix, subURI, subPort, customRules)
 	if err != nil {
 		c.String(500, "生成配置失败: %v", err)
 		return
