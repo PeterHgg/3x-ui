@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mhsanaei/3x-ui/v2/config"
 	"github.com/mhsanaei/3x-ui/v2/web/service"
@@ -289,9 +290,16 @@ func (a *SUBController) generateClash(c *gin.Context) {
 						email = e
 					}
 
-					// 获取到期时间（毫秒转秒），只有大于0才设置，避免显示1969年
+					// 获取到期时间（毫秒转秒）
 					if expiry, ok := client["expiryTime"].(float64); ok && expiry > 0 {
 						expiryTime = int64(expiry / 1000) // 毫秒转Unix秒
+					} else if expiry == 0 {
+						// 如果expiryTime为0，检查是否设置了自动续订周期
+						if reset, ok := client["reset"].(float64); ok && reset > 0 {
+							// 未激活但有周期，显示当前时间+周期天数
+							expiryTime = time.Now().Unix() + int64(reset*24*3600)
+						}
+						// 否则expiryTime保持为0（长期有效）
 					}
 
 					// 获取流量统计 - ClientStats是[]xray.ClientTraffic类型
