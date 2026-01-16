@@ -289,8 +289,8 @@ func (a *SUBController) generateClash(c *gin.Context) {
 						email = e
 					}
 
-					// 获取到期时间（毫秒转秒）
-					if expiry, ok := client["expiryTime"].(float64); ok {
+					// 获取到期时间（毫秒转秒），只有大于0才设置，避免显示1969年
+					if expiry, ok := client["expiryTime"].(float64); ok && expiry > 0 {
 						expiryTime = int64(expiry / 1000) // 毫秒转Unix秒
 					}
 
