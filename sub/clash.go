@@ -25,6 +25,7 @@ type ClashConfig struct {
 type ClashProfile struct {
 	StoreSelected bool `yaml:"store-selected,omitempty"` // 存储选择的节点
 	Tracing       bool `yaml:"tracing,omitempty"`        // 追踪模式
+	Interval      int  `yaml:"interval,omitempty"`       // 自动更新间隔（小时）
 }
 
 // Clash 代理节点
@@ -104,13 +105,16 @@ func (c *ClashConfig) ToYAML() string {
 	sb.WriteString(fmt.Sprintf("tcp-concurrent: %t\n", c.TCPConcurrent))
 
 	// Profile配置（自动更新间隔等）
-	if c.Profile.StoreSelected || c.Profile.Tracing {
+	if c.Profile.StoreSelected || c.Profile.Tracing || c.Profile.Interval > 0 {
 		sb.WriteString("profile:\n")
 		if c.Profile.StoreSelected {
 			sb.WriteString("  store-selected: true\n")
 		}
 		if c.Profile.Tracing {
 			sb.WriteString("  tracing: true\n")
+		}
+		if c.Profile.Interval > 0 {
+			sb.WriteString(fmt.Sprintf("  interval: %d\n", c.Profile.Interval))
 		}
 	}
 	sb.WriteString("\n")

@@ -77,8 +77,9 @@ func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, cou
 		UnifiedDelay:       true,
 		TCPConcurrent:      true,
 		Profile: ClashProfile{
-			StoreSelected: true, // 存储节点选择，支持12h自动更新
+			StoreSelected: true, // 存储节点选择
 			Tracing:       false,
+			Interval:      12, // 12小时自动更新
 		},
 		Proxies:       allProxies,
 		ProxyGroups:   proxyGroups,
