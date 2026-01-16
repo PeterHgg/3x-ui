@@ -263,18 +263,21 @@
         if (clashSubDomain) {
           // 如果配置了 Clash 订阅域名，构建新的 URI
           const protocol = window.location.protocol;
-          const port = app.subSettings.subPort || window.location.port;
+          const port = app.subSettings.subPort;
           subURI = `${protocol}//${clashSubDomain}${port ? ':' + port : ''}`;
         } else {
           // 使用原有的订阅 URI
           subURI = app.subSettings.subURI || window.location.origin;
         }
 
-        // 提取基础 URL 和路径
+        // 提取基础 URL
         const url = new URL(subURI);
 
-        // 如果开启了隐藏端口，则移除端口信息
-        if (app.subSettings.clashNoPort) {
+        // 如果没有隐藏端口且subPort存在，使用订阅端口（而不是面板端口）
+        if (!app.subSettings.clashNoPort && app.subSettings.subPort) {
+          url.port = app.subSettings.subPort;
+        } else if (app.subSettings.clashNoPort) {
+          // 如果开启了隐藏端口，则移除端口信息（默认443）
           url.port = '';
         }
 
