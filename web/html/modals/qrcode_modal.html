@@ -256,14 +256,26 @@
 
         if (!client || !inbound) return '';
 
+        // 获取原订阅URI的端口（用于Clash订阅）
+        let originalPort = app.subSettings.subPort;
+        if (!originalPort && app.subSettings.subURI) {
+          try {
+            const originalUrl = new URL(app.subSettings.subURI);
+            originalPort = originalUrl.port;
+          } catch (e) {
+            // 如果解析失败，使用默认值
+          }
+        }
+
         // 使用 Clash 订阅域名（如果配置了），否则使用订阅 URI
         const clashSubDomain = app.subSettings.clashSubDomain;
         let subURI;
 
         if (clashSubDomain) {
-          // 如果配置了 Clash 订阅域名，构建新的 URI
+          // 如果配置了 Clash 订阅域名，构建新的 URI，使用原订阅的端口
           const protocol = window.location.protocol;
-          const port = app.subSettings.subPort;
+          // 如果没有隐藏端口，使用原订阅端口
+          const port = app.subSettings.clashNoPort ? '' : originalPort;
           subURI = `${protocol}//${clashSubDomain}${port ? ':' + port : ''}`;
         } else {
           // 使用原有的订阅 URI
@@ -272,14 +284,6 @@
 
         // 提取基础 URL
         const url = new URL(subURI);
-
-        // 如果没有隐藏端口且subPort存在，使用订阅端口（而不是面板端口）
-        if (!app.subSettings.clashNoPort && app.subSettings.subPort) {
-          url.port = app.subSettings.subPort;
-        } else if (app.subSettings.clashNoPort) {
-          // 如果开启了隐藏端口，则移除端口信息（默认443）
-          url.port = '';
-        }
 
         const basePath = url.pathname.replace(/\/[^\/]*$/, '/'); // 保留路径，移除最后的子路径
         let link = url.origin + basePath + 'generate?';
