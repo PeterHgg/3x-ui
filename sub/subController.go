@@ -259,6 +259,7 @@ func (a *SUBController) generateClash(c *gin.Context) {
 	// 获取客户端流量信息并设置Header
 	var upload, download, total int64
 	var email string
+	var expiryTime int64
 
 	// 查询客户端信息
 	inboundService := service.InboundService{}
@@ -288,6 +289,11 @@ func (a *SUBController) generateClash(c *gin.Context) {
 						email = e
 					}
 
+					// 获取到期时间（毫秒转秒）
+					if expiry, ok := client["expiryTime"].(float64); ok {
+						expiryTime = int64(expiry / 1000) // 毫秒转Unix秒
+					}
+
 					// 获取流量统计 - ClientStats是[]xray.ClientTraffic类型
 					for _, stat := range inbound.ClientStats {
 						if stat.Email == email {
@@ -306,10 +312,10 @@ func (a *SUBController) generateClash(c *gin.Context) {
 		}
 	}
 
-	// 设置Subscription-UserInfo头（流量信息）
-	if total > 0 {
-		// upload=已上传; download=已下载; total=总流量; expire=过期时间
-		userInfo := fmt.Sprintf("upload=%d; download=%d; total=%d; expire=0", upload, download, total)
+	// 设置Subscription-UserInfo头（流量信息+到期时间）
+	if total > 0 || expiryTime > 0 {
+		// upload=已上传; download=已下载; total=总流量; expire=过期时间戳
+		userInfo := fmt.Sprintf("upload=%d; download=%d; total=%d; expire=%d", upload, download, total, expiryTime)
 		c.Header("Subscription-UserInfo", userInfo)
 
 	}
