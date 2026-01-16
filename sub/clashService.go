@@ -288,6 +288,8 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy) [
 			Name:     groupName,
 			Type:     "load-balance",
 			Proxies:  proxyNames,
+			URL:      "https://www.cloudflare.com/cdn-cgi/trace",
+			Interval: 300,
 			Strategy: "round-robin",
 		})
 
