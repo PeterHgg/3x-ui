@@ -311,13 +311,16 @@ func (a *SUBController) generateClash(c *gin.Context) {
 		// upload=已上传; download=已下载; total=总流量; expire=过期时间
 		userInfo := fmt.Sprintf("upload=%d; download=%d; total=%d; expire=0", upload, download, total)
 		c.Header("Subscription-UserInfo", userInfo)
-		c.Header("content-disposition", fmt.Sprintf("attachment; filename*=UTF-8''%s", "clash.yaml"))
+
 	}
 
-	// 设置订阅名称（使用邮箱）
+	// 设置文件名和订阅名称（使用邮箱）
+	filename := "clash.yaml"
 	if email != "" {
+		filename = email + ".yaml"
 		c.Header("profile-title", base64.StdEncoding.EncodeToString([]byte(email)))
 	}
+	c.Header("content-disposition", fmt.Sprintf("attachment; filename*=UTF-8''%s", filename))
 
 	// 设置自动更新间隔为12小时
 	c.Header("profile-update-interval", "12")
