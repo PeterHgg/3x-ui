@@ -14,10 +14,17 @@ type ClashConfig struct {
 	ExternalController string                       `yaml:"external-controller"`
 	UnifiedDelay       bool                         `yaml:"unified-delay"`
 	TCPConcurrent      bool                         `yaml:"tcp-concurrent"`
+	Profile            ClashProfile                 `yaml:"profile,omitempty"`
 	Proxies            []ClashProxy                 `yaml:"proxies"`
 	ProxyGroups        []ClashProxyGroup            `yaml:"proxy-groups"`
 	RuleProviders      map[string]ClashRuleProvider `yaml:"rule-providers"`
 	Rules              []string                     `yaml:"rules"`
+}
+
+// Clash Profile 配置
+type ClashProfile struct {
+	StoreSelected bool `yaml:"store-selected,omitempty"` // 存储选择的节点
+	Tracing       bool `yaml:"tracing,omitempty"`        // 追踪模式
 }
 
 // Clash 代理节点
@@ -94,7 +101,19 @@ func (c *ClashConfig) ToYAML() string {
 	sb.WriteString(fmt.Sprintf("log-level: %s\n", c.LogLevel))
 	sb.WriteString(fmt.Sprintf("external-controller: '%s'\n", c.ExternalController))
 	sb.WriteString(fmt.Sprintf("unified-delay: %t\n", c.UnifiedDelay))
-	sb.WriteString(fmt.Sprintf("tcp-concurrent: %t\n\n", c.TCPConcurrent))
+	sb.WriteString(fmt.Sprintf("tcp-concurrent: %t\n", c.TCPConcurrent))
+
+	// Profile配置（自动更新间隔等）
+	if c.Profile.StoreSelected || c.Profile.Tracing {
+		sb.WriteString("profile:\n")
+		if c.Profile.StoreSelected {
+			sb.WriteString("  store-selected: true\n")
+		}
+		if c.Profile.Tracing {
+			sb.WriteString("  tracing: true\n")
+		}
+	}
+	sb.WriteString("\n")
 
 	// Proxies
 	sb.WriteString("proxies:\n")

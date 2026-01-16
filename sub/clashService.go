@@ -76,10 +76,14 @@ func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, cou
 		ExternalController: ":9090",
 		UnifiedDelay:       true,
 		TCPConcurrent:      true,
-		Proxies:            allProxies,
-		ProxyGroups:        proxyGroups,
-		RuleProviders:      ruleProviders,
-		Rules:              rules,
+		Profile: ClashProfile{
+			StoreSelected: true, // 存储节点选择，支持12h自动更新
+			Tracing:       false,
+		},
+		Proxies:       allProxies,
+		ProxyGroups:   proxyGroups,
+		RuleProviders: ruleProviders,
+		Rules:         rules,
 	}, nil
 }
 

@@ -2,6 +2,7 @@ package sub
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -254,6 +255,83 @@ func (a *SUBController) generateClash(c *gin.Context) {
 		c.String(500, "生成配置失败: %v", err)
 		return
 	}
+
+	// 获取客户端流量信息并设置Header
+	var upload, download, total int64
+	var email string
+
+	// 查询客户端信息
+	inboundService := service.InboundService{}
+	allInbounds, err := inboundService.GetAllInbounds()
+	if err == nil {
+		for _, inbound := range allInbounds {
+			var settings map[string]interface{}
+			if err := json.Unmarshal([]byte(inbound.Settings), &settings); err != nil {
+				continue
+			}
+
+			clients, _ := settings["clients"].([]interface{})
+			for _, clientData := range clients {
+				client, _ := clientData.(map[string]interface{})
+
+				// 匹配UUID或密码
+				matched := false
+				if uuid != "" && client["id"] == uuid {
+					matched = true
+				} else if password != "" && client["password"] == password {
+					matched = true
+				}
+
+				if matched {
+					// 获取邮箱作为订阅名称
+					if e, ok := client["email"].(string); ok {
+						email = e
+					}
+
+					// 获取流量统计
+					if clientStats, ok := inbound.ClientStats.([]interface{}); ok {
+						for _, stat := range clientStats {
+							if s, ok := stat.(map[string]interface{}); ok {
+								statEmail, _ := s["email"].(string)
+								if statEmail == email {
+									if up, ok := s["up"].(int64); ok {
+										upload += up
+									}
+									if down, ok := s["down"].(int64); ok {
+										download += down
+									}
+									if t, ok := s["total"].(int64); ok {
+										total = t
+									}
+									break
+								}
+							}
+						}
+					}
+					break
+				}
+			}
+			if email != "" {
+				break
+			}
+		}
+	}
+
+	// 设置Subscription-UserInfo头（流量信息）
+	if total > 0 {
+		// upload=已上传; download=已下载; total=总流量; expire=过期时间
+		userInfo := fmt.Sprintf("upload=%d; download=%d; total=%d; expire=0", upload, download, total)
+		c.Header("Subscription-UserInfo", userInfo)
+		c.Header("content-disposition", fmt.Sprintf("attachment; filename*=UTF-8''%s", "clash.yaml"))
+	}
+
+	// 设置订阅名称（使用邮箱）
+	if email != "" {
+		c.Header("profile-title", base64.StdEncoding.EncodeToString([]byte(email)))
+	}
+
+	// 设置自动更新间隔为12小时
+	c.Header("profile-update-interval", "12")
 
 	// 返回 YAML
 	yamlContent := config.ToYAML()
