@@ -5,20 +5,8 @@ on:
   release:
     types: [published]
   push:
-    branches:
-      - main
     tags:
       - "v*"
-    paths:
-      - '**.js'
-      - '**.css'
-      - '**.html'
-      - '**.sh'
-      - '**.go'
-      - 'go.mod'
-      - 'go.sum'
-      - 'x-ui.service.debian'
-      - 'x-ui.service.rhel'
 
 jobs:
   build:
