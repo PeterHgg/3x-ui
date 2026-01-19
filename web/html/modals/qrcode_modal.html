@@ -305,9 +305,7 @@
           return ''; // 不支持的协议
         }
 
-        // 添加默认参数
-        link += '&count=' + (app.subSettings.clashCount || 28);
-
+        // 不添加其他参数，count等参数由面板设置决定
         return link;
       },
       revertOverflow() {
