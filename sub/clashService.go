@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -51,10 +52,10 @@ func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, cou
 	}
 
 	// 生成 CDN 节点（按备注分组）
-	proxiesMap := s.generateCDNProxies(baseNodes, cdnDomain, count, prefix, subPort)
+	proxiesMap, orderedGroupNames := s.generateCDNProxies(baseNodes, cdnDomain, count, prefix, subPort)
 
 	// 生成代理组
-	proxyGroups := s.generateProxyGroups(proxiesMap)
+	proxyGroups := s.generateProxyGroups(proxiesMap, orderedGroupNames)
 
 	// 生成规则提供者
 	ruleProviders := s.generateRuleProviders(origin)
@@ -144,14 +145,20 @@ func (s *ClashService) findNodesByPassword(password string) []*model.Inbound {
 	return result
 }
 
-// 生成 CDN 节点
-func (s *ClashService) generateCDNProxies(baseNodes []*model.Inbound, cdnDomain string, count int, prefix string, subPort int) map[string][]ClashProxy {
+// 生成 CDN 节点，返回proxiesMap和按inbound ID排序的组名列表
+func (s *ClashService) generateCDNProxies(baseNodes []*model.Inbound, cdnDomain string, count int, prefix string, subPort int) (map[string][]ClashProxy, []string) {
 	proxiesMap := make(map[string][]ClashProxy)
+	groupIDMap := make(map[string]int) // 记录每个组名对应的最小inbound ID
 
 	for _, inbound := range baseNodes {
 		groupName := inbound.Remark
 		if groupName == "" {
 			groupName = "Default"
+		}
+
+		// 记录第一次出现的inbound ID（用于排序）
+		if _, exists := groupIDMap[groupName]; !exists {
+			groupIDMap[groupName] = inbound.Id
 		}
 
 		for i := 1; i <= count; i++ {
@@ -170,7 +177,16 @@ func (s *ClashService) generateCDNProxies(baseNodes []*model.Inbound, cdnDomain 
 		}
 	}
 
-	return proxiesMap
+	// 按inbound ID排序组名
+	var orderedGroupNames []string
+	for name := range groupIDMap {
+		orderedGroupNames = append(orderedGroupNames, name)
+	}
+	sort.Slice(orderedGroupNames, func(i, j int) bool {
+		return groupIDMap[orderedGroupNames[i]] < groupIDMap[orderedGroupNames[j]]
+	})
+
+	return proxiesMap, orderedGroupNames
 }
 
 // 获取 WebSocket 路径
@@ -260,25 +276,17 @@ func (s *ClashService) createTrojanProxy(inbound *model.Inbound, cdnServer strin
 	}
 }
 
-// 生成代理组
-func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy) []ClashProxyGroup {
+// 生成代理组（使用按inbound ID排序的组名列表）
+func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, orderedGroupNames []string) []ClashProxyGroup {
 	groups := []ClashProxyGroup{}
-	loadBalanceGroupNames := []string{}
 
-	// 按照 keys 排序以保证生成的配置稳定（map 遍历是无序的）
-	var groupNames []string
-	for name := range proxiesMap {
-		groupNames = append(groupNames, name)
-	}
-	// 简单的冒泡排序或者直接信任先后顺序？为了稳定性最好排序，或者按输入顺序。
-	// 这里为了简单，我们暂时不做复杂的排序，因为 go map 随机。
-	// 为了用户体验，我们还是做个简单的排序吧，或者不排序也行，Clash不在乎。
-	// 但是为了让 "手动切换" 里的顺序好看点，我们按组名排序。
-	// 这里没有 sort 包引入，先不排了，或者引入 sort 包？
-	// 我们可以假设 map 遍历出的顺序。为了避免引入新包，先不排。
+	// 按排序后的顺序创建 load-balance 组
+	for _, groupName := range orderedGroupNames {
+		proxies, ok := proxiesMap[groupName]
+		if !ok {
+			continue
+		}
 
-	// 创建 load-balance 组
-	for groupName, proxies := range proxiesMap {
 		var proxyNames []string
 		for _, p := range proxies {
 			proxyNames = append(proxyNames, p.Name)
@@ -292,16 +300,14 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy) [
 			Interval: 300,
 			Strategy: "round-robin",
 		})
-
-		loadBalanceGroupNames = append(loadBalanceGroupNames, groupName)
 	}
 
 	// 创建顶层 select 组
-	// 将 "手动切换" 放在最前面
+	// 将 "手动切换" 放在最前面，使用排序后的组名列表
 	selectGroup := ClashProxyGroup{
 		Name:    "🚀 手动切换",
 		Type:    "select",
-		Proxies: loadBalanceGroupNames,
+		Proxies: orderedGroupNames,
 	}
 
 	// 将 selectGroup 插入到 groups 的第一个位置
