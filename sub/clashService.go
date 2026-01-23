@@ -54,7 +54,6 @@ func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, cou
 	// 生成 CDN 节点（按备注分组）
 	proxiesMap, orderedGroupNames := s.generateCDNProxies(baseNodes, cdnDomain, count, prefix, subPort)
 
-	// 生成低速专线节点（如果启用）- 域名为 x + prefix
 	// 生成低速专线节点（默认开启）- 域名为 x + prefix
 	// 为每个入站节点生成对应的低速节点
 	lowSpeedPrefix := "x" + prefix // 例如 prefix=cdn 则 xcdn
@@ -375,10 +374,7 @@ func (s *ClashService) generateLowSpeedLineProxies(baseNodes []*model.Inbound, c
 func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, orderedGroupNames []string, lowSpeedProxies []ClashProxy) []ClashProxyGroup {
 	groups := []ClashProxyGroup{}
 
-	// 创建低速专线 select 组（如果有低速专线节点）
-	var topLevelProxies []string
-
-	// 先添加 "手动切换" 组
+	// 1. 创建 "🚀 手动切换" 组 (放在最前面)
 	selectGroup := ClashProxyGroup{
 		Name:    "🚀 手动切换",
 		Type:    "select",
@@ -386,25 +382,10 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, o
 	}
 	groups = append(groups, selectGroup)
 
-	// 如果有低速专线，添加到 groups 的第二个位置，并加入 Manual 组
-	if len(lowSpeedProxies) > 0 {
-		var lowSpeedProxyNames []string
-		for _, p := range lowSpeedProxies {
-			lowSpeedProxyNames = append(lowSpeedProxyNames, p.Name)
-		}
+	// 手动切换组的 Proxies 列表
+	var topLevelProxies []string
 
-		lowSpeedGroup := ClashProxyGroup{
-			Name:    "🐢 低速专线",
-			Type:    "select",
-			Proxies: lowSpeedProxyNames,
-		}
-		groups = append(groups, lowSpeedGroup)
-
-		// 低速专线组也加入手动切换
-		topLevelProxies = append(topLevelProxies, "🐢 低速专线")
-	}
-
-	// 按排序后的顺序创建 load-balance 组
+	// 2. 按排序后的顺序创建 load-balance 组
 	for _, groupName := range orderedGroupNames {
 		proxies, ok := proxiesMap[groupName]
 		if !ok {
@@ -422,11 +403,29 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, o
 			Proxies:  proxyNames,
 			URL:      "http://cp.cloudflare.com/generate_204",
 			Interval: 300,
-			// Strategy: "consistent-hashing", // 恢复为默认轮询 (round-robin)
+			Strategy: "round-robin", // 显式设置为 round-robin
 		})
 
 		// load-balance 组加入手动切换
 		topLevelProxies = append(topLevelProxies, groupName)
+	}
+
+	// 3. 创建 "🐢 低速专线" 组 (放在最后面)
+	if len(lowSpeedProxies) > 0 {
+		var lowSpeedProxyNames []string
+		for _, p := range lowSpeedProxies {
+			lowSpeedProxyNames = append(lowSpeedProxyNames, p.Name)
+		}
+
+		lowSpeedGroup := ClashProxyGroup{
+			Name:    "🐢 低速专线",
+			Type:    "select",
+			Proxies: lowSpeedProxyNames,
+		}
+		groups = append(groups, lowSpeedGroup)
+
+		// 低速专线组也加入手动切换（放在最后）
+		topLevelProxies = append(topLevelProxies, "🐢 低速专线")
 	}
 
 	// 更新 "手动切换" 组的 proxies
