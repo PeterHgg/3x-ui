@@ -301,15 +301,22 @@ func (s *ClashService) generateLowSpeedLineProxies(baseInbound *model.Inbound, c
 	// 低速专线服务器地址 (例如 xcdn.5468936.xyz)
 	server := fmt.Sprintf("%s.%s", lowSpeedPrefix, domainSuffix)
 
-	// 4个固定路径和对应的节点名称
+	// 使用节点备注作为后缀（和普通CDN节点保持一致）
+	remarkSuffix := ""
+	if baseInbound.Remark != "" {
+		remarkSuffix = "-" + baseInbound.Remark
+	}
+
+	// 4个固定路径，节点名格式: x{prefix}{remarkSuffix}-{pathDesc}
+	// 例如: xcdn-主节点-智能分流, xcdn-主节点-原生IP
 	pathConfigs := []struct {
-		Path string
-		Name string
+		Path     string
+		PathDesc string
 	}{
-		{"/", "低速专线-智能分流"},
-		{"/rn", "低速专线-原生IP"},
-		{"/sc", "低速专线-欧洲v6"},
-		{"/cf", "低速专线-WARP"},
+		{"/", "智能分流"},
+		{"/rn", "原生IP"},
+		{"/sc", "欧洲v6"},
+		{"/cf", "WARP"},
 	}
 
 	// 根据协议类型创建节点
@@ -326,8 +333,10 @@ func (s *ClashService) generateLowSpeedLineProxies(baseInbound *model.Inbound, c
 		uuid, _ := client["id"].(string)
 
 		for _, cfg := range pathConfigs {
+			// 节点名格式: x{prefix}{remarkSuffix}-{pathDesc}, 例如: xcdn-主节点-智能分流
+			nodeName := fmt.Sprintf("%s%s-%s", lowSpeedPrefix, remarkSuffix, cfg.PathDesc)
 			proxies = append(proxies, ClashProxy{
-				Name:           cfg.Name,
+				Name:           nodeName,
 				Type:           "vmess",
 				Server:         server,
 				Port:           443,
@@ -354,8 +363,10 @@ func (s *ClashService) generateLowSpeedLineProxies(baseInbound *model.Inbound, c
 		password, _ := client["password"].(string)
 
 		for _, cfg := range pathConfigs {
+			// 节点名格式: x{prefix}{remarkSuffix}-{pathDesc}
+			nodeName := fmt.Sprintf("%s%s-%s", lowSpeedPrefix, remarkSuffix, cfg.PathDesc)
 			proxies = append(proxies, ClashProxy{
-				Name:           cfg.Name,
+				Name:           nodeName,
 				Type:           "trojan",
 				Server:         server,
 				Port:           443,
