@@ -95,11 +95,12 @@ var defaultValueMap = map[string]string{
 	"ldapDefaultExpiryDays": "0",
 	"ldapDefaultLimitIP":    "0",
 	// Clash subscription defaults
-	"clashDomain":    "",
-	"clashSubDomain": "",
-	"clashPrefix":    "",
-	"clashCount":     "0",
-	"clashNoPort":    "false",
+	"clashDomain":       "",
+	"clashSubDomain":    "",
+	"clashPrefix":       "",
+	"clashCount":        "0",
+	"clashNoPort":       "false",
+	"clashLowSpeedLine": "false",
 	"clashCustomRules": `DOMAIN-SUFFIX,szbdyd.com,REJECT
 DOMAIN-SUFFIX,mcdn.bilivideo.com,REJECT
 DOMAIN-SUFFIX,mcdn.bilivideo.cn,REJECT
