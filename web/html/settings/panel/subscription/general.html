@@ -151,6 +151,13 @@ DOMAIN,api.example.com,DIRECT" style="font-family: monospace; width: 100%"></a-t
                 <a-switch v-model="allSetting.clashNoPort"></a-switch>
             </template>
         </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>🐢 低速专线</template>
+            <template #description>开启后额外生成4个固定节点用于稳定长连接（如AI对话），域名为 x + CDN前缀（如 xcdn.域名）</template>
+            <template #control>
+                <a-switch v-model="allSetting.clashLowSpeedLine"></a-switch>
+            </template>
+        </a-setting-list-item>
     </a-collapse-panel>
 </a-collapse>
 {{end}}

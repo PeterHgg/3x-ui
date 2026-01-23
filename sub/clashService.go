@@ -38,7 +38,7 @@ func NewClashService() *ClashService {
 }
 
 // 生成 Clash 配置
-func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, count int, prefix, origin string, subPort int, customRules string) (*ClashConfig, error) {
+func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, count int, prefix, origin string, subPort int, customRules string, lowSpeedLine bool) (*ClashConfig, error) {
 	var baseNodes []*model.Inbound
 
 	if uuid != "" {
@@ -54,8 +54,15 @@ func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, cou
 	// 生成 CDN 节点（按备注分组）
 	proxiesMap, orderedGroupNames := s.generateCDNProxies(baseNodes, cdnDomain, count, prefix, subPort)
 
+	// 生成低速专线节点（如果启用）- 域名为 x + prefix
+	var lowSpeedProxies []ClashProxy
+	if lowSpeedLine && len(baseNodes) > 0 {
+		lowSpeedPrefix := "x" + prefix // 例如 prefix=cdn 则 xcdn
+		lowSpeedProxies = s.generateLowSpeedLineProxies(baseNodes[0], cdnDomain, lowSpeedPrefix, subPort)
+	}
+
 	// 生成代理组
-	proxyGroups := s.generateProxyGroups(proxiesMap, orderedGroupNames)
+	proxyGroups := s.generateProxyGroups(proxiesMap, orderedGroupNames, lowSpeedProxies)
 
 	// 生成规则提供者
 	ruleProviders := s.generateRuleProviders(origin)
@@ -68,6 +75,8 @@ func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, cou
 	for _, ps := range proxiesMap {
 		allProxies = append(allProxies, ps...)
 	}
+	// 加入低速专线节点
+	allProxies = append(allProxies, lowSpeedProxies...)
 
 	return &ClashConfig{
 		MixedPort:          7890,
@@ -276,8 +285,94 @@ func (s *ClashService) createTrojanProxy(inbound *model.Inbound, cdnServer strin
 	}
 }
 
+// 生成低速专线节点（4个固定节点，不同路径对应不同出口）
+func (s *ClashService) generateLowSpeedLineProxies(baseInbound *model.Inbound, cdnDomain, lowSpeedPrefix string, subPort int) []ClashProxy {
+	var proxies []ClashProxy
+
+	// 获取域名后缀（从cdnDomain提取，如 5468936.xyz）
+	domainParts := strings.Split(cdnDomain, ".")
+	var domainSuffix string
+	if len(domainParts) >= 2 {
+		domainSuffix = strings.Join(domainParts[len(domainParts)-2:], ".")
+	} else {
+		domainSuffix = cdnDomain
+	}
+
+	// 低速专线服务器地址 (例如 xcdn.5468936.xyz)
+	server := fmt.Sprintf("%s.%s", lowSpeedPrefix, domainSuffix)
+
+	// 4个固定路径和对应的节点名称
+	pathConfigs := []struct {
+		Path string
+		Name string
+	}{
+		{"/", "低速专线-智能分流"},
+		{"/rn", "低速专线-原生IP"},
+		{"/sc", "低速专线-欧洲v6"},
+		{"/cf", "低速专线-WARP"},
+	}
+
+	// 根据协议类型创建节点
+	if baseInbound.Protocol == "vmess" {
+		var settings map[string]interface{}
+		if err := json.Unmarshal([]byte(baseInbound.Settings), &settings); err != nil {
+			return proxies
+		}
+		clients, ok := settings["clients"].([]interface{})
+		if !ok || len(clients) == 0 {
+			return proxies
+		}
+		client := clients[0].(map[string]interface{})
+		uuid, _ := client["id"].(string)
+
+		for _, cfg := range pathConfigs {
+			proxies = append(proxies, ClashProxy{
+				Name:           cfg.Name,
+				Type:           "vmess",
+				Server:         server,
+				Port:           443,
+				UUID:           uuid,
+				AlterID:        0,
+				Cipher:         "auto",
+				TLS:            true,
+				SkipCertVerify: true,
+				UDP:            true,
+				Network:        "ws",
+				WSOptions:      &ClashWSOptions{Path: cfg.Path},
+			})
+		}
+	} else if baseInbound.Protocol == "trojan" {
+		var settings map[string]interface{}
+		if err := json.Unmarshal([]byte(baseInbound.Settings), &settings); err != nil {
+			return proxies
+		}
+		clients, ok := settings["clients"].([]interface{})
+		if !ok || len(clients) == 0 {
+			return proxies
+		}
+		client := clients[0].(map[string]interface{})
+		password, _ := client["password"].(string)
+
+		for _, cfg := range pathConfigs {
+			proxies = append(proxies, ClashProxy{
+				Name:           cfg.Name,
+				Type:           "trojan",
+				Server:         server,
+				Port:           443,
+				Password:       password,
+				SkipCertVerify: true,
+				UDP:            true,
+				Network:        "ws",
+				WSOptions:      &ClashWSOptions{Path: cfg.Path},
+			})
+		}
+	}
+
+	return proxies
+}
+
 // 生成代理组（使用按inbound ID排序的组名列表）
-func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, orderedGroupNames []string) []ClashProxyGroup {
+func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, orderedGroupNames []string, lowSpeedProxies []ClashProxy) []ClashProxyGroup {
 	groups := []ClashProxyGroup{}
 
 	// 按排序后的顺序创建 load-balance 组
@@ -302,12 +397,30 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, o
 		})
 	}
 
+	// 创建低速专线 select 组（如果有低速专线节点）
+	var topLevelProxies []string
+	topLevelProxies = append(topLevelProxies, orderedGroupNames...)
+
+	if len(lowSpeedProxies) > 0 {
+		var lowSpeedProxyNames []string
+		for _, p := range lowSpeedProxies {
+			lowSpeedProxyNames = append(lowSpeedProxyNames, p.Name)
+		}
+
+		lowSpeedGroup := ClashProxyGroup{
+			Name:    "🐢 低速专线",
+			Type:    "select",
+			Proxies: lowSpeedProxyNames,
+		}
+		groups = append(groups, lowSpeedGroup)
+		topLevelProxies = append(topLevelProxies, "🐢 低速专线")
+	}
+
 	// 创建顶层 select 组
-	// 将 "手动切换" 放在最前面，使用排序后的组名列表
 	selectGroup := ClashProxyGroup{
 		Name:    "🚀 手动切换",
 		Type:    "select",
-		Proxies: orderedGroupNames,
+		Proxies: topLevelProxies,
 	}
 
 	// 将 selectGroup 插入到 groups 的第一个位置
