@@ -251,13 +251,8 @@ func (a *SUBController) generateClash(c *gin.Context) {
 		customRules = ""
 	}
 
-	// 获取低速专线设置
-	lowSpeedLine, err := settingService.GetClashLowSpeedLine()
-	if err != nil {
-		lowSpeedLine = false
-	}
-
-	config, err := a.clashService.GenerateClashConfig(uuid, password, domain, countInt, prefix, subURI, subPort, customRules, lowSpeedLine)
+	// 低速专线默认开启（xcdn节点）
+	config, err := a.clashService.GenerateClashConfig(uuid, password, domain, countInt, prefix, subURI, subPort, customRules, true)
 	if err != nil {
 		c.String(500, "生成配置失败: %v", err)
 		return

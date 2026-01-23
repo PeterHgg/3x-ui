@@ -123,7 +123,7 @@
         </a-setting-list-item>
         <a-setting-list-item paddings="small">
             <template #title>CDN 前缀</template>
-            <template #description>CDN 子域名前缀（例如：cdn），生成节点如 1cdn, 2cdn，留空则不添加前缀</template>
+            <template #description>CDN 子域名前缀（例如：cdn），生成节点如 1cdn, 2cdn。另外会自动生成 x + 前缀 的低速专线节点（如 xcdn）用于稳定长连接</template>
             <template #control>
                 <a-input type="text" v-model="allSetting.clashPrefix" placeholder=""></a-input>
             </template>
@@ -149,13 +149,6 @@ DOMAIN,api.example.com,DIRECT" style="font-family: monospace; width: 100%"></a-t
             <template #description>生成订阅链接时不带端口（默认 443），适用于已配置 HTTPS 回源的情况</template>
             <template #control>
                 <a-switch v-model="allSetting.clashNoPort"></a-switch>
-            </template>
-        </a-setting-list-item>
-        <a-setting-list-item paddings="small">
-            <template #title>🐢 低速专线</template>
-            <template #description>开启后额外生成4个固定节点用于稳定长连接（如AI对话），域名为 x + CDN前缀（如 xcdn.域名）</template>
-            <template #control>
-                <a-switch v-model="allSetting.clashLowSpeedLine"></a-switch>
             </template>
         </a-setting-list-item>
     </a-collapse-panel>
