@@ -1,245 +1,434 @@
-{{ template "page/head_start" .}}
-{{ template "page/head_end" .}}
+<!DOCTYPE html>
+<html lang="{{ .cur_lang }}">
 
-{{ template "page/body_start" .}}
-<a-layout id="app" v-cloak :class="themeSwitcher.currentTheme + ' login-app'">
-  <transition name="list" appear>
-    <a-layout-content class="under min-h-0">
-      <div class="waves-header">
-        <div class="waves-inner-header"></div>
-        <svg class="waves" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
-          viewBox="0 24 150 28" preserveAspectRatio="none" shape-rendering="auto">
-          <defs>
-            <path id="gentle-wave" d="M-160 44c30 0 58-18 88-18s 58 18 88 18 58-18 88-18 58 18 88 18 v44h-352z" />
-          </defs>
-          <g class="parallax">
-            <use xlink:href="#gentle-wave" x="48" y="0" fill="rgba(0, 135, 113, 0.08)" />
-            <use xlink:href="#gentle-wave" x="48" y="3" fill="rgba(0, 135, 113, 0.08)" />
-            <use xlink:href="#gentle-wave" x="48" y="5" fill="rgba(0, 135, 113, 0.08)" />
-            <use xlink:href="#gentle-wave" x="48" y="7" fill="#c7ebe2" />
-          </g>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CloudVision Technologies | Empowering Digital Future</title>
+  <link rel="stylesheet" href="{{ .base_path }}assets/css/reset.css">
+  <style>
+    :root {
+      --primary: #2563eb;
+      --secondary: #1e40af;
+      --text: #1f2937;
+      --bg: #f9fafb;
+      --white: #ffffff;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      margin: 0;
+      overflow-x: hidden;
+    }
+
+    /* Navbar */
+    .cv-nav {
+      background: var(--white);
+      padding: 1.5rem 2rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: fixed;
+      width: 100%;
+      top: 0;
+      z-index: 100;
+    }
+
+    .cv-logo {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--primary);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .cv-logo svg {
+      width: 32px;
+      height: 32px;
+    }
+
+    .cv-links {
+      display: flex;
+      gap: 2rem;
+      align-items: center;
+    }
+
+    .cv-link {
+      text-decoration: none;
+      color: #4b5563;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .cv-link:hover {
+      color: var(--primary);
+    }
+
+    .cv-btn {
+      background: var(--primary);
+      color: var(--white);
+      padding: 0.5rem 1.25rem;
+      border-radius: 6px;
+      text-decoration: none;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+
+    .cv-btn:hover {
+      background: var(--secondary);
+    }
+
+    /* Hero Section */
+    .cv-hero {
+      padding: 8rem 2rem 4rem;
+      text-align: center;
+      background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
+    }
+
+    .cv-title {
+      font-size: 3.5rem;
+      font-weight: 800;
+      line-height: 1.2;
+      margin-bottom: 1.5rem;
+      background: linear-gradient(to right, var(--primary), var(--secondary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .cv-subtitle {
+      font-size: 1.25rem;
+      color: #6b7280;
+      max-width: 600px;
+      margin: 0 auto 3rem;
+    }
+
+    /* Features */
+    .cv-features {
+      padding: 4rem 2rem;
+      max-width: 1200px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 2rem;
+    }
+
+    .cv-card {
+      background: var(--white);
+      padding: 2rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      transition: transform 0.2s;
+    }
+
+    .cv-card:hover {
+      transform: translateY(-5px);
+    }
+
+    .cv-card-icon {
+      width: 48px;
+      height: 48px;
+      background: #eff6ff;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--primary);
+      margin-bottom: 1.5rem;
+    }
+
+    .cv-card h3 {
+      font-size: 1.25rem;
+      margin: 0 0 1rem;
+    }
+
+    .cv-card p {
+      color: #6b7280;
+      margin: 0;
+      font-size: 0.95rem;
+    }
+
+    /* Footer */
+    .cv-footer {
+      background: #1f2937;
+      color: #9ca3af;
+      padding: 4rem 2rem;
+      text-align: center;
+      margin-top: auto;
+    }
+
+    /* Hidden Login Modal */
+    #login-modal {
+      position: fixed;
+      top: 0;
+      right: -400px;
+      width: 400px;
+      height: 100vh;
+      background: var(--white);
+      box-shadow: -5px 0 15px rgba(0, 0, 0, 0.1);
+      z-index: 1000;
+      transition: right 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    #login-modal.visible {
+      right: 0;
+    }
+
+    .login-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 999;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s;
+    }
+
+    .login-overlay.visible {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    /* Login Form Styles */
+    .ant-form-item {
+      margin-bottom: 24px;
+    }
+
+    .ant-input {
+      width: 100%;
+      padding: 10px 15px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .ant-input:focus {
+      border-color: var(--primary);
+    }
+
+    .ant-btn {
+      width: 100%;
+      background: var(--primary);
+      color: white;
+      padding: 12px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+
+    .ant-btn:hover {
+      background: var(--secondary);
+    }
+
+    .ant-btn-loading {
+      opacity: 0.7;
+      cursor: wait;
+    }
+
+    @media (max-width: 768px) {
+      .cv-title {
+        font-size: 2.5rem;
+      }
+
+      .cv-links {
+        display: none;
+      }
+
+      #login-modal {
+        width: 100%;
+        right: -100%;
+      }
+    }
+  </style>
+  <!-- Vue & Ant Design -->
+  {{ template "page/head_start" .}}
+  {{ template "page/head_end" .}}
+</head>
+
+<body>
+
+  <!-- Fake Navbar -->
+  <nav class="cv-nav">
+    <a href="#" class="cv-logo">
+      <svg viewBox="0 0 24 24" fill="currentColor">
+        <path
+          d="M12 2L2 7l10 5 10-5-10-5zm0 9l2.5-1.25L12 8.5l-2.5 1.25L12 11zm0 2.5l-5-2.5-5 2.5L12 22l10-8.5-5-2.5-5 2.5z" />
+      </svg>
+      CloudVision
+    </a>
+    <div class="cv-links">
+      <a href="#" class="cv-link">Solutions</a>
+      <a href="#" class="cv-link">Products</a>
+      <a href="#" class="cv-link">Enterprise</a>
+      <a href="#" class="cv-link">Pricing</a>
+      <a href="#" class="cv-btn">Get Started</a>
+    </div>
+  </nav>
+
+  <!-- Fake Hero -->
+  <section class="cv-hero">
+    <h1 class="cv-title">Enterprise Cloud<br>Without Complexity</h1>
+    <p class="cv-subtitle">
+      Next-generation infrastructure for scaling your digital presence.
+      Secure, reliable, and globally distributed.
+    </p>
+    <a href="#" class="cv-btn" style="padding: 1rem 2rem; font-size: 1.1rem;">Start Free Trial</a>
+  </section>
+
+  <!-- Fake Features -->
+  <section class="cv-features">
+    <div class="cv-card">
+      <div class="cv-card-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 10h-2.5a2.5 2.5 0 100 5H18m-2.5 5H18M4 10h2.5a2.5 2.5 0 010 5H4m2.5 5H4M12 2v20" />
         </svg>
       </div>
-      <a-row type="flex" justify="center" align="middle" class="h-100 overflow-y-auto overflow-x-hidden">
-        <a-col :xs="22" :sm="12" :md="10" :lg="8" :xl="6" :xxl="5" id="login" class="my-3rem">
-          <template v-if="!loadingStates.fetched">
-            <div class="text-center">
-              <a-spin size="large" />
-            </div>
-          </template>
-          <template v-else>
-            <div class="setting-section">
-              <a-popover :overlay-class-name="themeSwitcher.currentTheme" title='{{ i18n "menu.settings" }}'
-                placement="bottomRight" trigger="click">
-                <template slot="content">
-                  <a-space direction="vertical" :size="10">
-                    <a-theme-switch-login></a-theme-switch-login>
-                    <span>{{ i18n "pages.settings.language" }}</span>
-                    <a-select ref="selectLang" class="w-100" v-model="lang" @change="LanguageManager.setLanguage(lang)"
-                      :dropdown-class-name="themeSwitcher.currentTheme">
-                      <a-select-option :value="l.value" label="English" v-for="l in LanguageManager.supportedLanguages">
-                        <span role="img" aria-label="l.name" v-text="l.icon"></span>
-                        &nbsp;&nbsp;<span v-text="l.name"></span>
-                      </a-select-option>
-                    </a-select>
-                  </a-space>
-                </template>
-                <a-button shape="circle" icon="setting"></a-button>
-              </a-popover>
-            </div>
-            <a-row type="flex" justify="center">
-              <a-col :style="{ width: '100%' }">
-                <h2 class="title headline zoom">
-                  <span class="words-wrapper">
-                    <b class="is-visible">{{ i18n "pages.login.hello" }}</b>
-                    <b>{{ i18n "pages.login.title" }}</b>
-                  </span>
-                </h2>
-              </a-col>
-            </a-row>
-            <a-row type="flex" justify="center">
-              <a-col span="24">
-                <a-form @submit.prevent="login">
-                  <a-space direction="vertical" size="middle">
-                    <a-form-item>
-                      <a-input autocomplete="username" name="username" v-model.trim="user.username"
-                        placeholder='{{ i18n "username" }}' autofocus required>
-                        <a-icon slot="prefix" type="user" class="fs-1rem"></a-icon>
-                      </a-input>
-                    </a-form-item>
-                    <a-form-item>
-                      <a-input-password autocomplete="current-password" name="password" v-model.trim="user.password"
-                        placeholder='{{ i18n "password" }}' required>
-                        <a-icon slot="prefix" type="lock" class="fs-1rem"></a-icon>
-                      </a-input-password>
-                    </a-form-item>
-                    <a-form-item v-if="twoFactorEnable">
-                      <a-input autocomplete="one-time-code" name="twoFactorCode" v-model.trim="user.twoFactorCode"
-                        placeholder='{{ i18n "twoFactorCode" }}' required>
-                        <a-icon slot="prefix" type="key" class="fs-1rem"></a-icon>
-                      </a-input>
-                    </a-form-item>
-                    <a-form-item>
-                      <a-row justify="center" class="centered">
-                        <div class="wave-btn-bg wave-btn-bg-cl h-50px mt-1rem"
-                          :style="loadingStates.spinning ? 'width: 52px' : 'display: inline-block'">
-                          <a-button class="ant-btn-primary-login" type="primary" :loading="loadingStates.spinning"
-                            :icon="loadingStates.spinning ? 'poweroff' : undefined" html-type="submit">
-                            [[ loadingStates.spinning ? '' : '{{ i18n "login" }}' ]]
-                          </a-button>
-                        </div>
-                      </a-row>
-                    </a-form-item>
-                  </a-space>
-                </a-form>
-              </a-col>
-            </a-row>
-          </template>
-        </a-col>
-      </a-row>
-    </a-layout-content>
-  </transition>
-</a-layout>
-{{template "page/body_scripts" .}}
-{{template "component/aThemeSwitch" .}}
-<script>
-  const app = new Vue({
-    delimiters: ['[[', ']]'],
-    el: '#app',
-    data: {
-      themeSwitcher,
-      loadingStates: { fetched: false, spinning: false },
-      user: { username: "", password: "", twoFactorCode: "" },
-      twoFactorEnable: false,
-      lang: "",
-      animationStarted: false
-    },
-    async mounted() {
-      this.lang = LanguageManager.getLanguage();
-      this.twoFactorEnable = await this.getTwoFactorEnable();
-    },
-    methods: {
-      async login() {
-        this.loadingStates.spinning = true;
-        const msg = await HttpUtil.post('/login', this.user);
-        if (msg.success) {
-          location.href = basePath + 'panel/';
-        }
-        this.loadingStates.spinning = false;
+      <h3>Global Network</h3>
+      <p>Deploy your applications to our edge locations worldwide with single-click orchestration.</p>
+    </div>
+    <div class="cv-card">
+      <div class="cv-card-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+        </svg>
+      </div>
+      <h3>Enterprise Security</h3>
+      <p>Bank-grade encryption and DDoS protection included in every plan.</p>
+    </div>
+    <div class="cv-card">
+      <div class="cv-card-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+        </svg>
+      </div>
+      <h3>Real-time Analytics</h3>
+      <p>Deep insights into your traffic and performance metrics in real-time.</p>
+    </div>
+  </section>
+
+  <!-- Fake Footer -->
+  <footer class="cv-footer">
+    <p>&copy; 2026 CloudVision Technologies Inc. All rights reserved.</p>
+    <div style="margin-top: 1rem; opacity: 0.5; font-size: 0.9rem;">
+      <a href="#" style="color: inherit; margin: 0 10px;">Privacy</a>
+      <a href="#" style="color: inherit; margin: 0 10px;">Terms</a>
+      <a href="#" style="color: inherit; margin: 0 10px;">Status</a>
+    </div>
+  </footer>
+
+  <!-- Hidden Login Overlay -->
+  <div class="login-overlay" onclick="toggleLogin()"></div>
+
+  <!-- Hidden Login Modal -->
+  <div id="login-modal">
+    <div id="app" v-cloak>
+      <h2 style="font-size: 1.5rem; font-weight: 700; margin-bottom: 2rem; color: var(--text);">
+        {{ i18n "pages.login.title" }}
+      </h2>
+      <form @submit.prevent="login">
+        <div class="ant-form-item">
+          <input class="ant-input" autocomplete="username" v-model.trim="user.username"
+            placeholder='{{ i18n "username" }}' type="text" required>
+        </div>
+        <div class="ant-form-item">
+          <input class="ant-input" autocomplete="current-password" v-model.trim="user.password"
+            placeholder='{{ i18n "password" }}' type="password" required>
+        </div>
+        <!-- 2FA Input -->
+        <div class="ant-form-item" v-if="twoFactorEnable">
+          <input class="ant-input" autocomplete="one-time-code" v-model.trim="user.twoFactorCode"
+            placeholder='{{ i18n "twoFactorCode" }}' type="text">
+        </div>
+
+        <button class="ant-btn" :class="{'ant-btn-loading': loadingStates.spinning}" type="submit">
+          [[ loadingStates.spinning ? '...' : '{{ i18n "login" }}' ]]
+        </button>
+      </form>
+    </div>
+  </div>
+
+  {{template "page/body_scripts" .}}
+
+  <script>
+    // Key Sequence Detector
+    const sequence = ['a', 'd', 'm', 'i', 'n'];
+    let currentIndex = 0;
+
+    document.addEventListener('keydown', (e) => {
+      // Reset if key doesn't match
+      if (e.key.toLowerCase() !== sequence[currentIndex]) {
+        currentIndex = 0;
+        return;
+      }
+
+      // Move to next match
+      currentIndex++;
+
+      // Check completion
+      if (currentIndex === sequence.length) {
+        toggleLogin();
+        currentIndex = 0;
+      }
+    });
+
+    function toggleLogin() {
+      document.getElementById('login-modal').classList.toggle('visible');
+      document.querySelector('.login-overlay').classList.toggle('visible');
+    }
+
+    // Vue App Logic
+    const app = new Vue({
+      delimiters: ['[[', ']]'],
+      el: '#app',
+      data: {
+        loadingStates: { fetched: false, spinning: false },
+        user: { username: "", password: "", twoFactorCode: "" },
+        twoFactorEnable: false
       },
-      async getTwoFactorEnable() {
-        const msg = await HttpUtil.post('/getTwoFactorEnable');
-        if (msg.success) {
-          this.twoFactorEnable = msg.obj;
-          this.loadingStates.fetched = true;
-          this.$nextTick(() => {
-            if (!this.animationStarted) {
-              this.animationStarted = true;
-              this.initHeadline();
+      async mounted() {
+        this.twoFactorEnable = await this.getTwoFactorEnable();
+      },
+      methods: {
+        async login() {
+          this.loadingStates.spinning = true;
+          try {
+            const msg = await HttpUtil.post('/login', this.user);
+            if (msg.success) {
+              location.href = basePath + 'panel/';
             }
-          });
-          return msg.obj;
-        }
-      },
-      initHeadline() {
-        const animationDelay = 2000;
-        const headlines = this.$el.querySelectorAll('.headline');
-        headlines.forEach((headline) => {
-          const first = headline.querySelector('.is-visible');
-          if (!first) return;
-          setTimeout(() => this.hideWord(first, animationDelay), animationDelay);
-        });
-      },
-      hideWord(word, delay) {
-        const nextWord = this.takeNext(word);
-        this.switchWord(word, nextWord);
-        setTimeout(() => this.hideWord(nextWord, delay), delay);
-      },
-      takeNext(word) {
-        return word.nextElementSibling || word.parentElement.firstElementChild;
-      },
-      switchWord(oldWord, newWord) {
-        oldWord.classList.remove('is-visible');
-        oldWord.classList.add('is-hidden');
-        newWord.classList.remove('is-hidden');
-        newWord.classList.add('is-visible');
-      }
-    },
-  });
-
-  const pm_input_selector = 'input.ant-input, textarea.ant-input';
-  const pm_strip_props = [
-    'background',
-    'background-color',
-    'background-image',
-    'color'
-  ];
-
-  const pm_observed_forms = new WeakSet();
-
-  function pm_strip_inline(el) {
-    if (!el || el.nodeType !== 1 || !el.matches?.(pm_input_selector)) return;
-
-    let did_change = false;
-    for (const prop of pm_strip_props) {
-      if (el.style.getPropertyValue(prop)) {
-        el.style.removeProperty(prop);
-        did_change = true;
-      }
-    }
-
-    if (did_change && el.style.length === 0) {
-      el.removeAttribute('style');
-    }
-  }
-
-  function pm_attach_observer(form) {
-    if (pm_observed_forms.has(form)) return;
-    pm_observed_forms.add(form);
-
-    form.querySelectorAll(pm_input_selector).forEach(pm_strip_inline);
-
-    const pm_mo = new MutationObserver(mutations => {
-      for (const m of mutations) {
-        if (m.type === 'attributes') {
-          pm_strip_inline(m.target);
-        } else if (m.type === 'childList') {
-          for (const n of m.addedNodes) {
-            if (n.nodeType !== 1) continue;
-            if (n.matches?.(pm_input_selector)) pm_strip_inline(n);
-            n.querySelectorAll?.(pm_input_selector).forEach(pm_strip_inline);
+          } finally {
+            this.loadingStates.spinning = false;
           }
+        },
+        async getTwoFactorEnable() {
+          try {
+            const msg = await HttpUtil.post('/getTwoFactorEnable');
+            if (msg.success) {
+              return msg.obj;
+            }
+          } catch (e) {
+            console.error(e);
+          }
+          return false;
         }
       }
     });
+  </script>
+</body>
 
-    pm_mo.observe(form, {
-      attributes: true,
-      attributeFilter: ['style'],
-      childList: true,
-      subtree: true
-    });
-  }
-
-  function pm_init() {
-    document.querySelectorAll('form.ant-form').forEach(pm_attach_observer);
-    const pm_host = document.getElementById('login') || document.body;
-    const pm_wait_for_forms = new MutationObserver(mutations => {
-      for (const m of mutations) {
-        for (const n of m.addedNodes) {
-          if (n.nodeType !== 1) continue;
-          if (n.matches?.('form.ant-form')) pm_attach_observer(n);
-          n.querySelectorAll?.('form.ant-form').forEach(pm_attach_observer);
-        }
-      }
-    });
-    pm_wait_for_forms.observe(pm_host, { childList: true, subtree: true });
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', pm_init, { once: true });
-  } else {
-    pm_init();
-  }
-</script>
-{{ template "page/body_end" .}}
+</html>
