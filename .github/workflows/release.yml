@@ -41,7 +41,7 @@ jobs:
           export CC=$(realpath "$(find "$TOOLCHAIN_DIR/bin" -name '*-gcc.br_real' -type f -executable | head -n1)")
           [ -z "$CC" ] && { echo "No gcc.br_real found in $TOOLCHAIN_DIR/bin" >&2; exit 1; }
           cd -
-          go build -ldflags "-w -s -linkmode external -extldflags '-static'" -o xui-release -v main.go
+          go build -ldflags "-X 'github.com/mhsanaei/3x-ui/v2/config.version=${{ github.ref_name }}' -w -s -linkmode external -extldflags '-static'" -o xui-release -v main.go
           file xui-release
           ldd xui-release || echo "Static binary confirmed"
           
