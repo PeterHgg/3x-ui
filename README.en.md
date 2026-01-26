@@ -42,8 +42,6 @@ As an enhanced fork of the original X-UI project, 3X-UI provides improved stabil
 - ✅ **Rule Proxy**: Integrated Loyalsoldier/clash-rules with auto-caching
 - ✅ **Traffic Info**: Supports Subscription-UserInfo header for real-time usage (v2.8.56+)
 - ✅ **Profile Config**: Auto-set subscription name (Email) and update interval (v2.8.56+)
-- ✅ **Dynamic Low-Speed Line**: Auto-generated xcdn nodes with optimized group order (v2.8.75+)
-- ✅ **Load Balance Strategy**: Explicit round-robin strategy for even traffic distribution (v2.8.76+)
 
 ## Quick Start
 
