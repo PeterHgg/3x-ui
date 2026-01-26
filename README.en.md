@@ -23,25 +23,17 @@ As an enhanced fork of the original X-UI project, 3X-UI provides improved stabil
 ## Features
 
 ### Master-Slave Node Synchronization (v2.8.x+)
-- ✅ **Automatic Client Sync**: Client changes on master node automatically sync to all slave nodes
-- ✅ **Traffic Aggregation**: Slave node traffic automatically accumulates to master node for unified quota management
-- ✅ **Read-Only Slave Nodes**: Slave nodes automatically disable client editing to prevent data inconsistency
-- ✅ **Periodic Sync Recovery**: Auto-check and recover sync every 5 minutes to ensure data consistency
-- ✅ **Real-time Sync Notifications**: Shows sync progress when setting sync source and adding clients
+- ✅ **Full Auto-Sync**: Real-time client sync to all slave nodes with auto-recovery for data consistency
+- ✅ **Unified Traffic Management**: Aggregated traffic stats from all nodes for centralized quota control
+- ✅ **Data Security**: Forced read-only mode on slave nodes with real-time sync status indication
 
 ### Clash Custom Subscription (v2.8.x+)
 > [!NOTE]
 > This configuration is specially for Cloudflare architecture, not a general subscription converter.
 
-- ✅ **Smart Node Generation**: Automatically batch generate CDN nodes pointing to CF
-- ✅ **Remark Grouping**: Intelligent grouping and load balancing based on inbound remarks
-- ✅ **Path Sync**: Automatically reads inbound WebSocket path configuration
-- ✅ **Port Adaptation**: Force use of port 443 for perfect CF CDN compatibility
-- ✅ **Hide Port**: Optional switch to remove subscription link port
-- ✅ **Custom Rules**: Visual editor for custom Clash rules with comment support (v2.8.55+)
-- ✅ **Rule Proxy**: Integrated Loyalsoldier/clash-rules with auto-caching
-- ✅ **Traffic Info**: Supports Subscription-UserInfo header for real-time usage (v2.8.56+)
-- ✅ **Profile Config**: Auto-set subscription name (Email) and update interval (v2.8.56+)
+- ✅ **Deep Cloudflare Integration**: Auto-generated CDN nodes, forced port 443, and smart grouping by inbound remarks
+- ✅ **Automated Configuration**: Auto-sync WS paths, hidden port support, and auto-set profile info (Name/Interval/Traffic)
+- ✅ **Advanced Rule System**: Built-in visual rule editor with integrated Loyalsoldier/clash-rules auto-proxy
 
 ## Quick Start
 
