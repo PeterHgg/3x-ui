@@ -166,21 +166,27 @@
     #login-modal {
       position: fixed;
       top: 0;
-      right: -400px;
+      right: 0;
       width: 400px;
       height: 100vh;
       background: var(--white);
       box-shadow: -5px 0 15px rgba(0, 0, 0, 0.1);
       z-index: 1000;
-      transition: right 0.4s cubic-bezier(0.4, 0, 0.2, 1);
       padding: 2rem;
       display: flex;
       flex-direction: column;
       justify-content: center;
+      /* Hidden by default */
+      transform: translateX(100%);
+      opacity: 0;
+      visibility: hidden;
+      transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s, visibility 0.3s;
     }
 
     #login-modal.visible {
-      right: 0;
+      transform: translateX(0);
+      opacity: 1;
+      visibility: visible;
     }
 
     .login-overlay {
@@ -340,18 +346,18 @@
       <h2 style="font-size: 1.5rem; font-weight: 700; margin-bottom: 2rem; color: var(--text);">
         {{ i18n "pages.login.title" }}
       </h2>
-      <form @submit.prevent="login">
+      <form @submit.prevent="login" autocomplete="off">
         <div class="ant-form-item">
-          <input class="ant-input" autocomplete="username" v-model.trim="user.username"
-            placeholder='{{ i18n "username" }}' type="text" required>
+          <input class="ant-input" autocomplete="off" v-model.trim="user.username" placeholder='{{ i18n "username" }}'
+            type="text" required>
         </div>
         <div class="ant-form-item">
-          <input class="ant-input" autocomplete="current-password" v-model.trim="user.password"
+          <input class="ant-input" autocomplete="new-password" v-model.trim="user.password"
             placeholder='{{ i18n "password" }}' type="password" required>
         </div>
         <!-- 2FA Input -->
         <div class="ant-form-item" v-if="twoFactorEnable">
-          <input class="ant-input" autocomplete="one-time-code" v-model.trim="user.twoFactorCode"
+          <input class="ant-input" autocomplete="off" v-model.trim="user.twoFactorCode"
             placeholder='{{ i18n "twoFactorCode" }}' type="text">
         </div>
 
