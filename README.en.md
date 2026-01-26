@@ -29,6 +29,22 @@ As an enhanced fork of the original X-UI project, 3X-UI provides improved stabil
 - ✅ **Periodic Sync Recovery**: Auto-check and recover sync every 5 minutes to ensure data consistency
 - ✅ **Real-time Sync Notifications**: Shows sync progress when setting sync source and adding clients
 
+### Clash Custom Subscription (v2.8.x+)
+> [!NOTE]
+> This configuration is specially for Cloudflare architecture, not a general subscription converter.
+
+- ✅ **Smart Node Generation**: Automatically batch generate CDN nodes pointing to CF
+- ✅ **Remark Grouping**: Intelligent grouping and load balancing based on inbound remarks
+- ✅ **Path Sync**: Automatically reads inbound WebSocket path configuration
+- ✅ **Port Adaptation**: Force use of port 443 for perfect CF CDN compatibility
+- ✅ **Hide Port**: Optional switch to remove subscription link port
+- ✅ **Custom Rules**: Visual editor for custom Clash rules with comment support (v2.8.55+)
+- ✅ **Rule Proxy**: Integrated Loyalsoldier/clash-rules with auto-caching
+- ✅ **Traffic Info**: Supports Subscription-UserInfo header for real-time usage (v2.8.56+)
+- ✅ **Profile Config**: Auto-set subscription name (Email) and update interval (v2.8.56+)
+- ✅ **Dynamic Low-Speed Line**: Auto-generated xcdn nodes with optimized group order (v2.8.75+)
+- ✅ **Load Balance Strategy**: Explicit round-robin strategy for even traffic distribution (v2.8.76+)
+
 ## Quick Start
 
 ### One-Click Install
@@ -63,12 +79,14 @@ x-ui uninstall    # Uninstall panel
 
 ## Version
 
-Current Version: **v2.8.23-0verf1ow**
+Current Version: **v2.8.76-0verf1ow**
 
 - Based on MHSanaei/3x-ui project
 - Maintained and enhanced by **0verf1ow**
 - Added master-slave node synchronization
+- Integrated Clash custom subscription generator
 - Optimized user experience and interface notifications
+- Enhanced subscription traffic info & load balance strategy
 
 ## Documentation
 
