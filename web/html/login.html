@@ -299,12 +299,12 @@
       position: fixed;
       top: 0;
       right: 0;
-      width: 400px;
+      width: 420px;
       height: 100vh;
-      background: var(--white);
-      box-shadow: -5px 0 15px rgba(0, 0, 0, 0.1);
+      background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+      box-shadow: -10px 0 40px rgba(0, 0, 0, 0.15);
       z-index: 2000;
-      padding: 2rem;
+      padding: 0;
       display: flex;
       flex-direction: column;
       justify-content: center;
@@ -329,7 +329,8 @@
       left: 0;
       width: 100%;
       height: 100%;
-      background: rgba(0, 0, 0, 0.5);
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(4px);
       z-index: 1500;
       opacity: 0;
       visibility: hidden;
@@ -343,42 +344,107 @@
       pointer-events: auto;
     }
 
+    /* Login Form Container */
+    .login-form-container {
+      padding: 3rem 2.5rem;
+    }
+
+    .login-header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+
+    .login-logo {
+      width: 56px;
+      height: 56px;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 1.5rem;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+    }
+
+    .login-logo svg {
+      width: 28px;
+      height: 28px;
+      color: white;
+    }
+
+    .login-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text);
+      margin: 0 0 0.5rem;
+    }
+
+    .login-subtitle {
+      font-size: 0.9rem;
+      color: #64748b;
+      margin: 0;
+    }
+
     /* Login Form Styles */
     .ant-form-item {
-      margin-bottom: 24px;
+      margin-bottom: 1.25rem;
+    }
+
+    .ant-form-item label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: #374151;
+      margin-bottom: 0.5rem;
     }
 
     .ant-input {
       width: 100%;
-      padding: 10px 15px;
-      border: 1px solid #d1d5db;
-      border-radius: 6px;
+      padding: 14px 16px;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 10px;
       outline: none;
-      transition: border-color 0.2s;
+      font-size: 1rem;
+      background: white;
+      transition: all 0.2s ease;
+      box-sizing: border-box;
+    }
+
+    .ant-input::placeholder {
+      color: #94a3b8;
     }
 
     .ant-input:focus {
       border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
     }
 
     .ant-btn {
       width: 100%;
-      background: var(--primary);
+      background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
       color: white;
-      padding: 12px;
+      padding: 14px;
       border: none;
-      border-radius: 6px;
+      border-radius: 10px;
       cursor: pointer;
       font-weight: 600;
-      transition: background 0.2s;
+      font-size: 1rem;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+      margin-top: 0.5rem;
     }
 
     .ant-btn:hover {
-      background: var(--secondary);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35);
+    }
+
+    .ant-btn:active {
+      transform: translateY(0);
     }
 
     .ant-btn-loading {
-      opacity: 0.7;
+      opacity: 0.8;
       cursor: wait;
     }
 
@@ -600,29 +666,38 @@
 
   <!-- Hidden Login Modal -->
   <div id="login-modal">
-    <div id="app" v-cloak>
-      <h2 style="font-size: 1.5rem; font-weight: 700; margin-bottom: 2rem; color: var(--text);">
-        {{ i18n "pages.login.title" }}
-      </h2>
-      <form @submit.prevent="login" autocomplete="off">
-        <div class="ant-form-item">
-          <input class="ant-input" autocomplete="off" v-model.trim="user.username" placeholder='{{ i18n "username" }}'
-            type="text" required>
+    <div class="login-form-container">
+      <div class="login-header">
+        <div class="login-logo">
+          <svg viewBox="0 0 24 24" fill="white">
+            <path
+              d="M12 2L2 7l10 5 10-5-10-5zm0 9l2.5-1.25L12 8.5l-2.5 1.25L12 11zm0 2.5l-5-2.5-5 2.5L12 22l10-8.5-5-2.5-5 2.5z" />
+          </svg>
         </div>
-        <div class="ant-form-item">
-          <input class="ant-input" autocomplete="new-password" v-model.trim="user.password"
-            placeholder='{{ i18n "password" }}' type="password" required>
-        </div>
-        <!-- 2FA Input -->
-        <div class="ant-form-item" v-if="twoFactorEnable">
-          <input class="ant-input" autocomplete="off" v-model.trim="user.twoFactorCode"
-            placeholder='{{ i18n "twoFactorCode" }}' type="text">
-        </div>
+        <h2 class="login-title">{{ i18n "pages.login.title" }}</h2>
+        <p class="login-subtitle">云视科技 · 企业云管理平台</p>
+      </div>
+      <div id="app" v-cloak>
+        <form @submit.prevent="login" autocomplete="off">
+          <div class="ant-form-item">
+            <input class="ant-input" autocomplete="off" v-model.trim="user.username" placeholder='{{ i18n "username" }}'
+              type="text" required>
+          </div>
+          <div class="ant-form-item">
+            <input class="ant-input" autocomplete="new-password" v-model.trim="user.password"
+              placeholder='{{ i18n "password" }}' type="password" required>
+          </div>
+          <!-- 2FA Input -->
+          <div class="ant-form-item" v-if="twoFactorEnable">
+            <input class="ant-input" autocomplete="off" v-model.trim="user.twoFactorCode"
+              placeholder='{{ i18n "twoFactorCode" }}' type="text">
+          </div>
 
-        <button class="ant-btn" :class="{'ant-btn-loading': loadingStates.spinning}" type="submit">
-          [[ loadingStates.spinning ? '...' : '{{ i18n "login" }}' ]]
-        </button>
-      </form>
+          <button class="ant-btn" :class="{'ant-btn-loading': loadingStates.spinning}" type="submit">
+            [[ loadingStates.spinning ? '...' : '{{ i18n "login" }}' ]]
+          </button>
+        </form>
+      </div>
     </div>
   </div>
 
