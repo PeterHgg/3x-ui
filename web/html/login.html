@@ -163,6 +163,119 @@
       font-size: 0.95rem;
     }
 
+    /* Products Section */
+    .cv-products {
+      padding: 4rem 2rem;
+      background: #f8fafc;
+      text-align: center;
+    }
+
+    .cv-prod-grid {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 2rem;
+    }
+
+    .cv-prod-item {
+      background: white;
+      padding: 1.5rem;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      transition: all 0.2s;
+      text-align: left;
+    }
+
+    .cv-prod-item:hover {
+      border-color: var(--primary);
+      box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.1);
+    }
+
+    .cv-prod-icon {
+      width: 40px;
+      height: 40px;
+      background: #eff6ff;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--primary);
+      margin-bottom: 1rem;
+    }
+
+    .cv-prod-item h4 {
+      margin: 0 0 0.5rem;
+      font-size: 1.1rem;
+    }
+
+    .cv-prod-item p {
+      margin: 0;
+      font-size: 0.9rem;
+      color: #64748b;
+    }
+
+    /* Pricing Section */
+    .cv-pricing {
+      padding: 4rem 2rem;
+      max-width: 1200px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .cv-pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 2rem;
+      margin-top: 3rem;
+    }
+
+    .cv-price-card {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 2rem;
+      position: relative;
+    }
+
+    .cv-price-card.featured {
+      border-color: var(--primary);
+      box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.1);
+      transform: scale(1.02);
+    }
+
+    .cv-price-tag {
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: var(--text);
+      margin: 1.5rem 0;
+    }
+
+    .cv-price-tag span {
+      font-size: 1rem;
+      color: #64748b;
+      font-weight: 400;
+    }
+
+    .cv-features-list {
+      list-style: none;
+      padding: 0;
+      margin: 2rem 0;
+      text-align: left;
+    }
+
+    .cv-features-list li {
+      padding: 0.5rem 0;
+      color: #475569;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .cv-check {
+      color: var(--primary);
+    }
+
     /* App Section */
     .cv-app-section {
       display: block !important;
@@ -306,10 +419,10 @@
       云视科技
     </a>
     <div class="cv-links">
-      <a href="#features" class="cv-link">解决方案</a>
-      <a href="#features" class="cv-link">产品中心</a>
+      <a href="#solutions" class="cv-link">解决方案</a>
+      <a href="#products" class="cv-link">产品中心</a>
       <a href="#download" class="cv-link">客户端下载</a>
-      <a href="#features" class="cv-link">价格方案</a>
+      <a href="#pricing" class="cv-link">价格方案</a>
       <a href="#download" class="cv-btn">立即开始</a>
     </div>
   </nav>
@@ -324,8 +437,12 @@
     <a href="#download" class="cv-btn" style="padding: 1rem 2rem; font-size: 1.1rem;">免费试用</a>
   </section>
 
-  <!-- Fake Features -->
-  <section id="features" class="cv-features">
+  <!-- Solutions Section -->
+  <section id="solutions" class="cv-features">
+    <div style="grid-column: 1/-1; text-align: center; margin-bottom: 1rem;">
+      <h2 style="font-size: 2rem; margin-bottom: 0.5rem">行业解决方案</h2>
+      <p style="color: #64748b">为不同规模的企业打造专属的云端架构</p>
+    </div>
     <div class="cv-card">
       <div class="cv-card-icon">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -352,6 +469,108 @@
       </div>
       <h3>实时分析</h3>
       <p>实时洞察流量与性能指标，助您通过数据驱动业务增长。</p>
+    </div>
+  </section>
+
+  <!-- Products Section -->
+  <section id="products" class="cv-products">
+    <h2 style="font-size: 2rem; margin-bottom: 3rem">核心产品体系</h2>
+    <div class="cv-prod-grid">
+      <div class="cv-prod-item">
+        <div class="cv-prod-icon">
+          <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+          </svg>
+        </div>
+        <h4>弹性计算</h4>
+        <p>高性能虚拟主机，秒级启动，按需扩容。</p>
+      </div>
+      <div class="cv-prod-item">
+        <div class="cv-prod-icon">
+          <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+          </svg>
+        </div>
+        <h4>云数据库</h4>
+        <p>完全托管的关系型数据库，高可用架构。</p>
+      </div>
+      <div class="cv-prod-item">
+        <div class="cv-prod-icon">
+          <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+          </svg>
+        </div>
+        <h4>对象存储</h4>
+        <p>海量数据无限存储，数据持久性99.99%。</p>
+      </div>
+      <div class="cv-prod-item">
+        <div class="cv-prod-icon">
+          <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+          </svg>
+        </div>
+        <h4>容器服务</h4>
+        <p>企业级 K8s 容器管理平台，简化运维。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pricing Section -->
+  <section id="pricing" class="cv-pricing">
+    <h2 style="font-size: 2rem; margin: 0">灵活的定价方案</h2>
+    <p style="color: #64748b; margin-top: 1rem">无隐形费用，按需付费，随着您的业务增长而扩展。</p>
+
+    <div class="cv-pricing-grid">
+      <!-- Starter -->
+      <div class="cv-price-card">
+        <h3 style="font-size: 1.25rem; margin-bottom: 0.5rem">基础版</h3>
+        <p style="font-size: 0.9rem; color: #64748b">个人开发者的最佳选择</p>
+        <div class="cv-price-tag">¥0<span>/月</span></div>
+        <a href="#download" class="cv-btn" style="display: block; background: #e2e8f0; color: var(--text)">免费试用</a>
+        <ul class="cv-features-list">
+          <li><span class="cv-check">✓</span> 1个核心 CPU</li>
+          <li><span class="cv-check">✓</span> 1GB 内存</li>
+          <li><span class="cv-check">✓</span> 10GB SSD 存储</li>
+          <li><span class="cv-check">✓</span> 基础网络支持</li>
+        </ul>
+      </div>
+
+      <!-- Pro -->
+      <div class="cv-price-card featured">
+        <div
+          style="position: absolute; top: -12px; left: 50%; transform: translateX(-50%); background: var(--primary); color: white; padding: 0.25rem 1rem; border-radius: 20px; font-size: 0.8rem; font-weight: 600;">
+          最受欢迎</div>
+        <h3 style="font-size: 1.25rem; margin-bottom: 0.5rem">专业版</h3>
+        <p style="font-size: 0.9rem; color: #64748b">适合快速成长的初创团队</p>
+        <div class="cv-price-tag">¥199<span>/月</span></div>
+        <a href="#download" class="cv-btn" style="display: block;">立即升级</a>
+        <ul class="cv-features-list">
+          <li><span class="cv-check">✓</span> 4个核心 CPU</li>
+          <li><span class="cv-check">✓</span> 8GB 内存</li>
+          <li><span class="cv-check">✓</span> 100GB SSD 存储</li>
+          <li><span class="cv-check">✓</span> 全球 CDN 加速</li>
+          <li><span class="cv-check">✓</span> 优先技术支持</li>
+        </ul>
+      </div>
+
+      <!-- Enterprise -->
+      <div class="cv-price-card">
+        <h3 style="font-size: 1.25rem; margin-bottom: 0.5rem">企业版</h3>
+        <p style="font-size: 0.9rem; color: #64748b">满足大规模业务部署需求</p>
+        <div class="cv-price-tag">定制<span></span></div>
+        <a href="#download" class="cv-btn" style="display: block; background: #e2e8f0; color: var(--text)">联系销售</a>
+        <ul class="cv-features-list">
+          <li><span class="cv-check">✓</span> 独享物理机资源</li>
+          <li><span class="cv-check">✓</span> 无限扩展存储</li>
+          <li><span class="cv-check">✓</span> 私有网络 VPC</li>
+          <li><span class="cv-check">✓</span> 7x24小时 专属客服</li>
+          <li><span class="cv-check">✓</span> SLA 99.99% 保证</li>
+        </ul>
+      </div>
     </div>
   </section>
 
