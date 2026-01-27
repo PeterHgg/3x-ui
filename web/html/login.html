@@ -294,29 +294,26 @@
       margin-top: auto;
     }
 
-    /* Hidden Login Modal - Grid Layout */
+    /* Hidden Login Modal - Forced Layout */
     #login-modal {
-      position: fixed;
-      top: 0;
-      right: 0;
-      width: 480px;
-      /* Slightly wider for premium feel */
-      height: 100vh;
-      background: rgba(255, 255, 255, 0.96);
-      backdrop-filter: blur(12px);
-      box-shadow: -20px 0 50px rgba(15, 23, 42, 0.15);
-      z-index: 2000;
-      padding: 0;
+      position: fixed !important;
+      top: 0 !important;
+      right: 0 !important;
+      width: 480px !important;
+      height: 100vh !important;
+      background: rgba(255, 255, 255, 0.95) !important;
+      backdrop-filter: blur(16px) !important;
+      -webkit-backdrop-filter: blur(16px) !important;
+      box-shadow: -20px 0 50px rgba(15, 23, 42, 0.2) !important;
+      z-index: 9999 !important;
+      /* Highest priority */
+      padding: 0 !important;
 
-      /* Grid Layout Strategy - The Ultimate Layout Fix */
-      display: grid;
-      grid-template-rows: 1fr auto 1fr;
-      /* Top spacer, Content, Bottom spacer */
-      grid-template-columns: 100%;
-      align-items: center;
-      justify-items: center;
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: center !important;
+      align-items: center !important;
 
-      /* Animation */
       transform: translateX(100%);
       opacity: 0;
       visibility: hidden;
@@ -325,28 +322,24 @@
     }
 
     #login-modal.visible {
-      transform: translateX(0);
-      opacity: 1;
-      visibility: visible;
-      pointer-events: auto;
+      transform: translateX(0) !important;
+      opacity: 1 !important;
+      visibility: visible !important;
+      pointer-events: auto !important;
     }
 
-    /* Modal Content Container */
+    /* Content Wrapper - Force Vertical Order */
     .login-content-wrapper {
-      grid-row: 2;
-      /* Place in middle row */
-      width: 100%;
-      max-width: 360px;
-      padding: 0 2rem;
-      display: flex;
-      flex-direction: column;
-      gap: 2.5rem;
-      /* Space between Header and Form */
+      width: 100% !important;
+      max-width: 380px !important;
+      padding: 0 2rem !important;
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 2rem !important;
     }
 
-    /* Header Section */
+    /* 1. Header (Logo + Title) - TOP */
     .login-header {
-      text-align: center;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -722,66 +715,9 @@
 
   <!-- Hidden Login Modal -->
   <div id="login-modal">
-    <div class="login-content-wrapper">
-      <div class="login-header">
-        <div class="login-logo">
-          <svg viewBox="0 0 24 24" fill="white">
-            <path
-              d="M12 2L2 7l10 5 10-5-10-5zm0 9l2.5-1.25L12 8.5l-2.5 1.25L12 11zm0 2.5l-5-2.5-5 2.5L12 22l10-8.5-5-2.5-5 2.5z" />
-          </svg>
-        </div>
-        <h2 class="login-title">{{ i18n "pages.login.title" }}</h2>
-        <p class="login-subtitle">云视科技 · 企业云管理平台</p>
-      </div>
-
-      <div id="app" v-cloak>
-        <form @submit.prevent="login" autocomplete="off">
-          <div class="ant-form-item">
-            <div class="input-group">
-              <span class="input-icon">
-                <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-              </span>
-              <input class="ant-input" autocomplete="off" v-model.trim="user.username"
-                placeholder='{{ i18n "username" }}' type="text" required>
-            </div>
-          </div>
-
-          <div class="ant-form-item">
-            <div class="input-group">
-              <span class="input-icon">
-                <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                </svg>
-              </span>
-              <input class="ant-input" autocomplete="new-password" v-model.trim="user.password"
-                placeholder='{{ i18n "password" }}' type="password" required>
-            </div>
-          </div>
-
-          <!-- 2FA Input -->
-          <div class="ant-form-item" v-if="twoFactorEnable">
-            <div class="input-group">
-              <span class="input-icon">
-                <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                </svg>
-              </span>
-              <input class="ant-input" autocomplete="off" v-model.trim="user.twoFactorCode"
-                placeholder='{{ i18n "twoFactorCode" }}' type="text">
-            </div>
-          </div>
-
-          <button class="ant-btn" :class="{'ant-btn-loading': loadingStates.spinning}" type="submit">
-            [[ loadingStates.spinning ? '...' : '{{ i18n "login" }}' ]]
-          </button>
-        </form>
-      </div>
-    </div>
+    </form>
+  </div>
+  </div>
   </div>
 
   {{template "page/body_scripts" .}}
