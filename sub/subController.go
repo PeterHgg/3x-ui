@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -335,7 +336,7 @@ func (a *SUBController) generateClash(c *gin.Context) {
 		filename = email + ".yaml"
 		c.Header("profile-title", base64.StdEncoding.EncodeToString([]byte(email)))
 	}
-	c.Header("content-disposition", fmt.Sprintf("attachment; filename*=UTF-8''%s", filename))
+	c.Header("content-disposition", fmt.Sprintf("attachment; filename*=UTF-8''%s", url.PathEscape(filename)))
 
 	// 设置自动更新间隔为12小时
 	c.Header("profile-update-interval", "12")
