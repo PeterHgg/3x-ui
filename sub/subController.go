@@ -139,6 +139,9 @@ func (a *SUBController) subs(c *gin.Context) {
 		header := fmt.Sprintf("upload=%d; download=%d; total=%d; expire=%d", traffic.Up, traffic.Down, traffic.Total, traffic.ExpiryTime/1000)
 		a.ApplyCommonHeaders(c, header, a.updateInterval, a.subTitle)
 
+		// Set subscription filename with date
+		a.ApplySubscriptionFilename(c, subId, "txt")
+
 		if a.subEncrypt {
 			c.String(200, base64.StdEncoding.EncodeToString([]byte(result)))
 		} else {
@@ -159,6 +162,9 @@ func (a *SUBController) subJsons(c *gin.Context) {
 		// Add headers
 		a.ApplyCommonHeaders(c, header, a.updateInterval, a.subTitle)
 
+		// Set JSON subscription filename with date
+		a.ApplySubscriptionFilename(c, subId, "json")
+
 		c.String(200, jsonSub)
 	}
 }
@@ -168,6 +174,16 @@ func (a *SUBController) ApplyCommonHeaders(c *gin.Context, header, updateInterva
 	c.Writer.Header().Set("Subscription-Userinfo", header)
 	c.Writer.Header().Set("Profile-Update-Interval", updateInterval)
 	c.Writer.Header().Set("Profile-Title", "base64:"+base64.StdEncoding.EncodeToString([]byte(profileTitle)))
+}
+
+// ApplySubscriptionFilename sets Content-Disposition header for subscription file download with date
+func (a *SUBController) ApplySubscriptionFilename(c *gin.Context, subId, extension string) {
+	// Generate filename with date (YYYYMMDD format)
+	currentTime := time.Now().Format("20060102")
+	filename := fmt.Sprintf("%s_%s.%s", subId, currentTime, extension)
+
+	// Set Content-Disposition header with UTF-8 URL-encoded filename
+	c.Writer.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename*=UTF-8''%s", url.PathEscape(filename)))
 }
 
 // generateClash handles Clash subscription generation requests
