@@ -36,20 +36,33 @@ func (j *PeriodicSyncJob) Run() {
 
 	syncedCount := 0
 	for _, slave := range slaveInbounds {
-		// Get source inbound to compare client count
+		// Get source inbound to compare client configurations
 		sourceInbound, err := j.inboundService.GetInbound(slave.SyncSourceId)
 		if err != nil {
 			logger.Warning("PeriodicSyncJob: Failed to get source inbound", slave.SyncSourceId, ":", err)
 			continue
 		}
 
-		// Get client counts
+		// Get clients for hash comparison
 		sourceClients, _ := j.inboundService.GetClients(sourceInbound)
 		slaveClients, _ := j.inboundService.GetClients(slave)
 
-		// Only sync if counts differ (indicates missed sync)
-		if len(sourceClients) != len(slaveClients) {
-			logger.Infof("PeriodicSyncJob: Syncing inbound %d (%s) - source has %d clients, slave has %d",
+		// Compute SHA256 hashes of client configurations
+		sourceHash, err := service.ComputeClientsHash(sourceClients)
+		if err != nil {
+			logger.Warning("PeriodicSyncJob: Failed to compute source hash for inbound", slave.SyncSourceId, ":", err)
+			continue
+		}
+
+		slaveHash, err := service.ComputeClientsHash(slaveClients)
+		if err != nil {
+			logger.Warning("PeriodicSyncJob: Failed to compute slave hash for inbound", slave.Id, ":", err)
+			continue
+		}
+
+		// Sync if hashes differ (detects ANY change, not just count)
+		if sourceHash != slaveHash {
+			logger.Infof("PeriodicSyncJob: Syncing inbound %d (%s) - config hash mismatch (source: %d clients, slave: %d clients)",
 				slave.Id, slave.Remark, len(sourceClients), len(slaveClients))
 
 			_, err := j.inboundService.PerformFullSync(slave.Id)

@@ -152,10 +152,16 @@ func (s *SubJsonService) getConfig(inbound *model.Inbound, client model.Client, 
 	var newJsonArray []json_util.RawMessage
 	stream := s.streamData(inbound.StreamSettings)
 
-	externalProxies, ok := stream["externalProxy"].([]any)
-	if !ok || len(externalProxies) == 0 {
-		externalProxies = []any{
-			map[string]any{
+	// Handle external proxies using helper function
+	externalProxies, err := getExternalProxies(inbound.StreamSettings)
+	if err != nil {
+		logger.Warning("Failed to parse external proxies for JSON subscription:", err)
+	}
+
+	// If no external proxies or parsing failed, use default (current host/port)
+	if len(externalProxies) == 0 {
+		externalProxies = []map[string]interface{}{
+			{
 				"forceTls": "same",
 				"dest":     host,
 				"port":     float64(inbound.Port),
@@ -167,11 +173,18 @@ func (s *SubJsonService) getConfig(inbound *model.Inbound, client model.Client, 
 	delete(stream, "externalProxy")
 
 	for _, ep := range externalProxies {
-		extPrxy := ep.(map[string]any)
-		inbound.Listen = extPrxy["dest"].(string)
-		inbound.Port = int(extPrxy["port"].(float64))
+		// Safe type assertions (already validated by helper)
+		forceTls, _ := ep["forceTls"].(string)
+		dest, _ := ep["dest"].(string)
+		port, _ := ep["port"].(float64)
+		remark, _ := ep["remark"].(string)
+
+		inbound.Listen = dest
+		inbound.Port = int(port)
 		newStream := stream
-		switch extPrxy["forceTls"].(string) {
+
+		// Apply forceTls settings
+		switch forceTls {
 		case "tls":
 			if newStream["security"] != "tls" {
 				newStream["security"] = "tls"
@@ -201,7 +214,7 @@ func (s *SubJsonService) getConfig(inbound *model.Inbound, client model.Client, 
 		maps.Copy(newConfigJson, s.configJson)
 
 		newConfigJson["outbounds"] = newOutbounds
-		newConfigJson["remarks"] = s.SubService.genRemark(inbound, client.Email, extPrxy["remark"].(string))
+		newConfigJson["remarks"] = s.SubService.genRemark(inbound, client.Email, remark)
 
 		newConfig, _ := json.MarshalIndent(newConfigJson, "", "  ")
 		newJsonArray = append(newJsonArray, newConfig)

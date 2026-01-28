@@ -175,6 +175,74 @@ func (s *SubService) getLink(inbound *model.Inbound, email string) string {
 	return ""
 }
 
+// getExternalProxies safely extracts and validates external proxies from stream settings
+func getExternalProxies(streamSettings string) ([]map[string]interface{}, error) {
+	if streamSettings == "" {
+		return nil, nil
+	}
+
+	var stream map[string]interface{}
+	if err := json.Unmarshal([]byte(streamSettings), &stream); err != nil {
+		return nil, fmt.Errorf("failed to parse stream settings: %w", err)
+	}
+
+	externalProxiesRaw, ok := stream["externalProxy"].([]interface{})
+	if !ok || len(externalProxiesRaw) == 0 {
+		return nil, nil // No external proxies, not an error
+	}
+
+	result := make([]map[string]interface{}, 0, len(externalProxiesRaw))
+	for i, ep := range externalProxiesRaw {
+		epMap, ok := ep.(map[string]interface{})
+		if !ok {
+			logger.Warning("External proxy at index", i, "is not a map, skipping")
+			continue
+		}
+
+		// Validate required fields with safe type assertions
+		dest, destOk := epMap["dest"].(string)
+		if !destOk || dest == "" {
+			logger.Warning("External proxy at index", i, "missing or invalid 'dest' field, skipping")
+			continue
+		}
+
+		port, portOk := epMap["port"].(float64)
+		if !portOk || port <= 0 {
+			logger.Warning("External proxy at index", i, "missing or invalid 'port' field, skipping")
+			continue
+		}
+
+		// Set defaults for optional fields
+		if _, ok := epMap["remark"]; !ok {
+			epMap["remark"] = ""
+		}
+		if _, ok := epMap["forceTls"]; !ok {
+			epMap["forceTls"] = "same"
+		}
+
+		result = append(result, epMap)
+	}
+
+	return result, nil
+}
+
+// shouldSkipParamForNoneTLS determines if a TLS parameter should be skipped
+// when forceTls is "none"
+func shouldSkipParamForNoneTLS(paramName string, forceTls string) bool {
+	if forceTls != "none" {
+		return false
+	}
+
+	tlsOnlyParams := map[string]bool{
+		"sni":           true,
+		"fp":            true,
+		"alpn":          true,
+		"allowInsecure": true,
+	}
+
+	return tlsOnlyParams[paramName]
+}
+
 func (s *SubService) genVmessLink(inbound *model.Inbound, email string) string {
 	if inbound.Protocol != model.VMESS {
 		return ""
@@ -287,26 +355,38 @@ func (s *SubService) genVmessLink(inbound *model.Inbound, email string) string {
 	obj["id"] = clients[clientIndex].ID
 	obj["scy"] = clients[clientIndex].Security
 
-	externalProxies, _ := stream["externalProxy"].([]any)
+	// Handle external proxies using helper function
+	externalProxies, err := getExternalProxies(inbound.StreamSettings)
+	if err != nil {
+		logger.Warning("Failed to parse external proxies for VMess:", err)
+		// Fall through to generate single link
+	}
 
 	if len(externalProxies) > 0 {
 		links := ""
-		for index, externalProxy := range externalProxies {
-			ep, _ := externalProxy.(map[string]any)
-			newSecurity, _ := ep["forceTls"].(string)
+		for index, ep := range externalProxies {
+			forceTls, _ := ep["forceTls"].(string)
 			newObj := map[string]any{}
+
+			// Copy all properties except TLS-only params when forceTls is "none"
 			for key, value := range obj {
-				if !(newSecurity == "none" && (key == "alpn" || key == "sni" || key == "fp" || key == "allowInsecure")) {
+				if !shouldSkipParamForNoneTLS(key, forceTls) {
 					newObj[key] = value
 				}
 			}
-			newObj["ps"] = s.genRemark(inbound, email, ep["remark"].(string))
-			newObj["add"] = ep["dest"].(string)
-			newObj["port"] = int(ep["port"].(float64))
 
-			if newSecurity != "same" {
-				newObj["tls"] = newSecurity
+			// Set external proxy specific values (already validated by helper)
+			remark, _ := ep["remark"].(string)
+			newObj["ps"] = s.genRemark(inbound, email, remark)
+			newObj["add"], _ = ep["dest"].(string)
+			port, _ := ep["port"].(float64)
+			newObj["port"] = int(port)
+
+			// Override TLS setting if forceTls is not "same"
+			if forceTls != "same" {
+				newObj["tls"] = forceTls
 			}
+
 			if index > 0 {
 				links += "\n"
 			}
@@ -481,35 +561,43 @@ func (s *SubService) genVlessLink(inbound *model.Inbound, email string) string {
 		params["security"] = "none"
 	}
 
-	externalProxies, _ := stream["externalProxy"].([]any)
+	// Handle external proxies using helper function
+	externalProxies, err := getExternalProxies(inbound.StreamSettings)
+	if err != nil {
+		logger.Warning("Failed to parse external proxies for VLESS:", err)
+		// Fall through to generate single link
+	}
 
 	if len(externalProxies) > 0 {
 		links := make([]string, 0, len(externalProxies))
-		for _, externalProxy := range externalProxies {
-			ep, _ := externalProxy.(map[string]any)
-			newSecurity, _ := ep["forceTls"].(string)
+		for _, ep := range externalProxies {
+			forceTls, _ := ep["forceTls"].(string)
 			dest, _ := ep["dest"].(string)
-			port := int(ep["port"].(float64))
-			link := fmt.Sprintf("vless://%s@%s:%d", uuid, dest, port)
+			port, _ := ep["port"].(float64)
+			remark, _ := ep["remark"].(string)
 
-			if newSecurity != "same" {
-				params["security"] = newSecurity
+			link := fmt.Sprintf("vless://%s@%s:%d", uuid, dest, int(port))
+
+			// Override security if forceTls is not "same"
+			if forceTls != "same" {
+				params["security"] = forceTls
 			} else {
 				params["security"] = security
 			}
+
 			url, _ := url.Parse(link)
 			q := url.Query()
 
+			// Add params, skip TLS-only params when forceTls is "none"
 			for k, v := range params {
-				if !(newSecurity == "none" && (k == "alpn" || k == "sni" || k == "fp" || k == "allowInsecure")) {
+				if !shouldSkipParamForNoneTLS(k, forceTls) {
 					q.Add(k, v)
 				}
 			}
 
 			// Set the new query values on the URL
 			url.RawQuery = q.Encode()
-
-			url.Fragment = s.genRemark(inbound, email, ep["remark"].(string))
+			url.Fragment = s.genRemark(inbound, email, remark)
 
 			links = append(links, url.String())
 		}
@@ -678,35 +766,43 @@ func (s *SubService) genTrojanLink(inbound *model.Inbound, email string) string 
 		params["security"] = "none"
 	}
 
-	externalProxies, _ := stream["externalProxy"].([]any)
+	// Handle external proxies using helper function
+	externalProxies, err := getExternalProxies(inbound.StreamSettings)
+	if err != nil {
+		logger.Warning("Failed to parse external proxies for Trojan:", err)
+		// Fall through to generate single link
+	}
 
 	if len(externalProxies) > 0 {
 		links := ""
-		for index, externalProxy := range externalProxies {
-			ep, _ := externalProxy.(map[string]any)
-			newSecurity, _ := ep["forceTls"].(string)
+		for index, ep := range externalProxies {
+			forceTls, _ := ep["forceTls"].(string)
 			dest, _ := ep["dest"].(string)
-			port := int(ep["port"].(float64))
-			link := fmt.Sprintf("trojan://%s@%s:%d", password, dest, port)
+			port, _ := ep["port"].(float64)
+			remark, _ := ep["remark"].(string)
 
-			if newSecurity != "same" {
-				params["security"] = newSecurity
+			link := fmt.Sprintf("trojan://%s@%s:%d", password, dest, int(port))
+
+			// Override security if forceTls is not "same"
+			if forceTls != "same" {
+				params["security"] = forceTls
 			} else {
 				params["security"] = security
 			}
+
 			url, _ := url.Parse(link)
 			q := url.Query()
 
+			// Add params, skip TLS-only params when forceTls is "none"
 			for k, v := range params {
-				if !(newSecurity == "none" && (k == "alpn" || k == "sni" || k == "fp" || k == "allowInsecure")) {
+				if !shouldSkipParamForNoneTLS(k, forceTls) {
 					q.Add(k, v)
 				}
 			}
 
 			// Set the new query values on the URL
 			url.RawQuery = q.Encode()
-
-			url.Fragment = s.genRemark(inbound, email, ep["remark"].(string))
+			url.Fragment = s.genRemark(inbound, email, remark)
 
 			if index > 0 {
 				links += "\n"
@@ -850,35 +946,43 @@ func (s *SubService) genShadowsocksLink(inbound *model.Inbound, email string) st
 		encPart = fmt.Sprintf("%s:%s:%s", method, inboundPassword, clients[clientIndex].Password)
 	}
 
-	externalProxies, _ := stream["externalProxy"].([]any)
+	// Handle external proxies using helper function
+	externalProxies, err := getExternalProxies(inbound.StreamSettings)
+	if err != nil {
+		logger.Warning("Failed to parse external proxies for Shadowsocks:", err)
+		// Fall through to generate single link
+	}
 
 	if len(externalProxies) > 0 {
 		links := ""
-		for index, externalProxy := range externalProxies {
-			ep, _ := externalProxy.(map[string]any)
-			newSecurity, _ := ep["forceTls"].(string)
+		for index, ep := range externalProxies {
+			forceTls, _ := ep["forceTls"].(string)
 			dest, _ := ep["dest"].(string)
-			port := int(ep["port"].(float64))
-			link := fmt.Sprintf("ss://%s@%s:%d", base64.StdEncoding.EncodeToString([]byte(encPart)), dest, port)
+			port, _ := ep["port"].(float64)
+			remark, _ := ep["remark"].(string)
 
-			if newSecurity != "same" {
-				params["security"] = newSecurity
+			link := fmt.Sprintf("ss://%s@%s:%d", base64.StdEncoding.EncodeToString([]byte(encPart)), dest, int(port))
+
+			// Override security if forceTls is not "same"
+			if forceTls != "same" {
+				params["security"] = forceTls
 			} else {
 				params["security"] = security
 			}
+
 			url, _ := url.Parse(link)
 			q := url.Query()
 
+			// Add params, skip TLS-only params when forceTls is "none"
 			for k, v := range params {
-				if !(newSecurity == "none" && (k == "alpn" || k == "sni" || k == "fp" || k == "allowInsecure")) {
+				if !shouldSkipParamForNoneTLS(k, forceTls) {
 					q.Add(k, v)
 				}
 			}
 
 			// Set the new query values on the URL
 			url.RawQuery = q.Encode()
-
-			url.Fragment = s.genRemark(inbound, email, ep["remark"].(string))
+			url.Fragment = s.genRemark(inbound, email, remark)
 
 			if index > 0 {
 				links += "\n"
