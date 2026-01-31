@@ -15,6 +15,7 @@ type ClashConfig struct {
 	UnifiedDelay       bool                         `yaml:"unified-delay"`
 	TCPConcurrent      bool                         `yaml:"tcp-concurrent"`
 	Profile            ClashProfile                 `yaml:"profile,omitempty"`
+	DNS                ClashDNS                     `yaml:"dns,omitempty"`
 	Proxies            []ClashProxy                 `yaml:"proxies"`
 	ProxyGroups        []ClashProxyGroup            `yaml:"proxy-groups"`
 	RuleProviders      map[string]ClashRuleProvider `yaml:"rule-providers"`
@@ -26,6 +27,13 @@ type ClashProfile struct {
 	StoreSelected bool `yaml:"store-selected,omitempty"` // 存储选择的节点
 	Tracing       bool `yaml:"tracing,omitempty"`        // 追踪模式
 	Interval      int  `yaml:"interval,omitempty"`       // 自动更新间隔（小时）
+}
+
+// DNS 配置
+type ClashDNS struct {
+	Enable       bool     `yaml:"enable"`
+	EnhancedMode string   `yaml:"enhanced-mode"`
+	Nameserver   []string `yaml:"nameserver"`
 }
 
 // Clash 代理节点
@@ -103,6 +111,17 @@ func (c *ClashConfig) ToYAML() string {
 	sb.WriteString(fmt.Sprintf("external-controller: '%s'\n", c.ExternalController))
 	sb.WriteString(fmt.Sprintf("unified-delay: %t\n", c.UnifiedDelay))
 	sb.WriteString(fmt.Sprintf("tcp-concurrent: %t\n", c.TCPConcurrent))
+
+	// DNS 配置
+	if c.DNS.Enable {
+		sb.WriteString("\ndns:\n")
+		sb.WriteString("  enable: true\n")
+		sb.WriteString(fmt.Sprintf("  enhanced-mode: %s\n", c.DNS.EnhancedMode))
+		sb.WriteString("  nameserver:\n")
+		for _, ns := range c.DNS.Nameserver {
+			sb.WriteString(fmt.Sprintf("    - %s\n", ns))
+		}
+	}
 
 	// Profile配置（自动更新间隔等）
 	if c.Profile.StoreSelected || c.Profile.Tracing || c.Profile.Interval > 0 {

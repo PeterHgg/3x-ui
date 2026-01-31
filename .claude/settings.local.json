@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git tag:*)",
+      "Bash(tree:*)",
+      "Bash(ls -la:*)",
+      "Bash(go build:*)",
+      "Bash(echo:*)",
+      "Bash(git pull:*)",
+      "Bash(git describe:*)",
+      "Bash(gh:*)",
+      "Bash(git reset:*)",
+      "Bash(git init)",
+      "Bash(pnpm install:*)",
+      "Bash(npm install)",
+      "Bash(curl:*)",
+      "Bash(docker-compose logs:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(docker compose up:*)",
+      "Bash(docker:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:xyz.380083.xyz)",
+      "Bash(start:*)",
+      "WebFetch(domain:api.tikhub.io)",
+      "Bash(docker-compose ps:*)",
+      "Bash(docker-compose down)",
+      "Bash(docker-compose restart:*)",
+      "Bash(docker-compose down:*)",
+      "Bash(docker-compose build:*)",
+      "WebFetch(domain:aio.5468936.xyz)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\BXM\\.gemini\\antigravity\\scratch\\douyin-wechat-share\\public"
+    ]
+  }
+}

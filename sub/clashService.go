@@ -84,6 +84,11 @@ func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, cou
 		ExternalController: ":9090",
 		UnifiedDelay:       true,
 		TCPConcurrent:      true,
+		DNS: ClashDNS{
+			Enable:       true,
+			EnhancedMode: "redir-host",
+			Nameserver:   []string{"223.5.5.5", "119.29.29.29"},
+		},
 		Profile: ClashProfile{
 			StoreSelected: true, // 存储节点选择
 			Tracing:       false,
