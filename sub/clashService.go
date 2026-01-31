@@ -38,7 +38,7 @@ func NewClashService() *ClashService {
 }
 
 // 生成 Clash 配置
-func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, count int, prefix, origin string, subPort int, customRules string, lowSpeedLine bool) (*ClashConfig, error) {
+func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, count int, prefix, origin string, subPort int, customRules string) (*ClashConfig, error) {
 	var baseNodes []*model.Inbound
 
 	if uuid != "" {

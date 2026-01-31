@@ -269,7 +269,7 @@ func (a *SUBController) generateClash(c *gin.Context) {
 	}
 
 	// 低速专线默认开启（xcdn节点）
-	config, err := a.clashService.GenerateClashConfig(uuid, password, domain, countInt, prefix, subURI, subPort, customRules, true)
+	config, err := a.clashService.GenerateClashConfig(uuid, password, domain, countInt, prefix, subURI, subPort, customRules)
 	if err != nil {
 		c.String(500, "生成配置失败: %v", err)
 		return
