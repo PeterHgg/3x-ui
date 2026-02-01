@@ -79,7 +79,8 @@ func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, cou
 		TCPConcurrent:      true,
 		DNS: ClashDNS{
 			Enable:       true,
-			EnhancedMode: "redir-host",
+			EnhancedMode: "fake-ip",
+			FakeIPRange:  "198.18.0.1/16",
 			Nameserver:   []string{"223.5.5.5", "119.29.29.29"},
 		},
 		Profile: ClashProfile{

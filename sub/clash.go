@@ -33,6 +33,7 @@ type ClashProfile struct {
 type ClashDNS struct {
 	Enable       bool     `yaml:"enable"`
 	EnhancedMode string   `yaml:"enhanced-mode"`
+	FakeIPRange  string   `yaml:"fake-ip-range"`
 	Nameserver   []string `yaml:"nameserver"`
 }
 
@@ -117,6 +118,9 @@ func (c *ClashConfig) ToYAML() string {
 		sb.WriteString("\ndns:\n")
 		sb.WriteString("  enable: true\n")
 		sb.WriteString(fmt.Sprintf("  enhanced-mode: %s\n", c.DNS.EnhancedMode))
+		if c.DNS.FakeIPRange != "" {
+			sb.WriteString(fmt.Sprintf("  fake-ip-range: %s\n", c.DNS.FakeIPRange))
+		}
 		sb.WriteString("  nameserver:\n")
 		for _, ns := range c.DNS.Nameserver {
 			sb.WriteString(fmt.Sprintf("    - %s\n", ns))
