@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/mhsanaei/3x-ui/v2/config"
+	"github.com/mhsanaei/3x-ui/v2/database"
+	"github.com/mhsanaei/3x-ui/v2/database/model"
 	"github.com/mhsanaei/3x-ui/v2/web/service"
 
 	"github.com/gin-gonic/gin"
@@ -311,10 +313,18 @@ func (a *SUBController) generateClash(c *gin.Context) {
 	var expiryTime int64
 
 	// 查询客户端信息
-	inboundService := service.InboundService{}
-	allInbounds, err := inboundService.GetAllInbounds()
-	if err == nil {
-		for _, inbound := range allInbounds {
+	db := database.GetDB()
+	var inbounds []*model.Inbound
+	query := db.Model(&model.Inbound{}).Preload("ClientStats")
+
+	if uuid != "" {
+		query = query.Where("settings LIKE ?", "%"+uuid+"%")
+	} else if password != "" {
+		query = query.Where("settings LIKE ?", "%"+password+"%")
+	}
+
+	if err := query.Find(&inbounds).Error; err == nil {
+		for _, inbound := range inbounds {
 			var settings map[string]interface{}
 			if err := json.Unmarshal([]byte(inbound.Settings), &settings); err != nil {
 				continue

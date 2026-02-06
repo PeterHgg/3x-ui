@@ -99,7 +99,8 @@ func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, cou
 func (s *ClashService) findNodesByUUID(uuid string) []*model.Inbound {
 	db := database.GetDB()
 	var allInbounds []*model.Inbound
-	db.Where("protocol = ?", "vmess").Find(&allInbounds)
+	// 使用 LIKE 优化查询，减少不必要的反序列化
+	db.Where("protocol = ? AND settings LIKE ?", "vmess", "%"+uuid+"%").Find(&allInbounds)
 
 	var result []*model.Inbound
 	for _, inbound := range allInbounds {
@@ -127,7 +128,8 @@ func (s *ClashService) findNodesByUUID(uuid string) []*model.Inbound {
 func (s *ClashService) findNodesByPassword(password string) []*model.Inbound {
 	db := database.GetDB()
 	var allInbounds []*model.Inbound
-	db.Where("protocol = ?", "trojan").Find(&allInbounds)
+	// 使用 LIKE 优化查询，减少不必要的反序列化
+	db.Where("protocol = ? AND settings LIKE ?", "trojan", "%"+password+"%").Find(&allInbounds)
 
 	var result []*model.Inbound
 	for _, inbound := range allInbounds {
