@@ -2,7 +2,6 @@ package sub
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -10,8 +9,6 @@ import (
 	"time"
 
 	"github.com/mhsanaei/3x-ui/v2/config"
-	"github.com/mhsanaei/3x-ui/v2/database"
-	"github.com/mhsanaei/3x-ui/v2/database/model"
 	"github.com/mhsanaei/3x-ui/v2/web/service"
 
 	"github.com/gin-gonic/gin"
@@ -34,6 +31,7 @@ type SUBController struct {
 	subService     *SubService
 	subJsonService *SubJsonService
 	clashService   *ClashService
+	clientService  *service.ClientService
 }
 
 // NewSUBController creates a new subscription controller with the given configuration.
@@ -74,6 +72,7 @@ func NewSUBController(
 		subService:     sub,
 		subJsonService: NewSubJsonService(jsonFragment, jsonNoise, jsonMux, jsonRules, sub),
 		clashService:   NewClashService(),
+		clientService:  &service.ClientService{},
 	}
 	a.initRouter(g)
 	return a
@@ -313,66 +312,30 @@ func (a *SUBController) generateClash(c *gin.Context) {
 	var expiryTime int64
 
 	// 查询客户端信息
-	db := database.GetDB()
-	var inbounds []*model.Inbound
-	query := db.Model(&model.Inbound{}).Preload("ClientStats")
+	inbound, client, err := a.clientService.SearchInboundAndClient(uuid, password)
+	if err == nil && inbound != nil && client != nil {
+		if e, ok := client["email"].(string); ok {
+			email = e
+		}
 
-	if uuid != "" {
-		query = query.Where("settings LIKE ?", "%"+uuid+"%")
-	} else if password != "" {
-		query = query.Where("settings LIKE ?", "%"+password+"%")
-	}
-
-	if err := query.Find(&inbounds).Error; err == nil {
-		for _, inbound := range inbounds {
-			var settings map[string]interface{}
-			if err := json.Unmarshal([]byte(inbound.Settings), &settings); err != nil {
-				continue
+		// 获取到期时间（毫秒转秒）
+		if expiry, ok := client["expiryTime"].(float64); ok && expiry > 0 {
+			expiryTime = int64(expiry / 1000) // 毫秒转Unix秒
+		} else {
+			// expiryTime不存在或为0，检查是否设置了自动续订周期
+			if reset, ok := client["reset"].(float64); ok && reset > 0 {
+				// 未激活但有周期，显示当前时间+周期天数
+				expiryTime = time.Now().Unix() + int64(reset*24*3600)
 			}
+			// 否则expiryTime保持为0（长期有效）
+		}
 
-			clients, _ := settings["clients"].([]interface{})
-			for _, clientData := range clients {
-				client, _ := clientData.(map[string]interface{})
-
-				// 匹配UUID或密码
-				matched := false
-				if uuid != "" && client["id"] == uuid {
-					matched = true
-				} else if password != "" && client["password"] == password {
-					matched = true
-				}
-
-				if matched {
-					// 获取邮箱作为订阅名称
-					if e, ok := client["email"].(string); ok {
-						email = e
-					}
-
-					// 获取到期时间（毫秒转秒）
-					if expiry, ok := client["expiryTime"].(float64); ok && expiry > 0 {
-						expiryTime = int64(expiry / 1000) // 毫秒转Unix秒
-					} else {
-						// expiryTime不存在或为0，检查是否设置了自动续订周期
-						if reset, ok := client["reset"].(float64); ok && reset > 0 {
-							// 未激活但有周期，显示当前时间+周期天数
-							expiryTime = time.Now().Unix() + int64(reset*24*3600)
-						}
-						// 否则expiryTime保持为0（长期有效）
-					}
-
-					// 获取流量统计 - ClientStats是[]xray.ClientTraffic类型
-					for _, stat := range inbound.ClientStats {
-						if stat.Email == email {
-							upload += stat.Up
-							download += stat.Down
-							total = stat.Total
-							break
-						}
-					}
-					break
-				}
-			}
-			if email != "" {
+		// 获取流量统计 - ClientStats是[]xray.ClientTraffic类型
+		for _, stat := range inbound.ClientStats {
+			if stat.Email == email {
+				upload += stat.Up
+				download += stat.Down
+				total = stat.Total
 				break
 			}
 		}

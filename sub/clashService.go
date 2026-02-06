@@ -10,12 +10,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mhsanaei/3x-ui/v2/database"
 	"github.com/mhsanaei/3x-ui/v2/database/model"
+	"github.com/mhsanaei/3x-ui/v2/web/service"
 )
 
 type ClashService struct {
-	ruleCache *RuleCache
+	ruleCache     *RuleCache
+	clientService *service.ClientService
 }
 
 // 规则缓存
@@ -34,6 +35,7 @@ func NewClashService() *ClashService {
 		ruleCache: &RuleCache{
 			cache: make(map[string]*CachedRule),
 		},
+		clientService: &service.ClientService{},
 	}
 }
 
@@ -97,60 +99,14 @@ func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, cou
 
 // 根据 UUID 查找节点
 func (s *ClashService) findNodesByUUID(uuid string) []*model.Inbound {
-	db := database.GetDB()
-	var allInbounds []*model.Inbound
-	// 使用 LIKE 优化查询，减少不必要的反序列化
-	db.Where("protocol = ? AND settings LIKE ?", "vmess", "%"+uuid+"%").Find(&allInbounds)
-
-	var result []*model.Inbound
-	for _, inbound := range allInbounds {
-		var settings map[string]interface{}
-		if err := json.Unmarshal([]byte(inbound.Settings), &settings); err != nil {
-			continue
-		}
-
-		if clients, ok := settings["clients"].([]interface{}); ok {
-			for _, client := range clients {
-				if c, ok := client.(map[string]interface{}); ok {
-					if c["id"] == uuid {
-						result = append(result, inbound)
-						break
-					}
-				}
-			}
-		}
-	}
-
-	return result
+	inbounds, _ := s.clientService.FindInboundsByClientUUID(uuid)
+	return inbounds
 }
 
 // 根据密码查找节点
 func (s *ClashService) findNodesByPassword(password string) []*model.Inbound {
-	db := database.GetDB()
-	var allInbounds []*model.Inbound
-	// 使用 LIKE 优化查询，减少不必要的反序列化
-	db.Where("protocol = ? AND settings LIKE ?", "trojan", "%"+password+"%").Find(&allInbounds)
-
-	var result []*model.Inbound
-	for _, inbound := range allInbounds {
-		var settings map[string]interface{}
-		if err := json.Unmarshal([]byte(inbound.Settings), &settings); err != nil {
-			continue
-		}
-
-		if clients, ok := settings["clients"].([]interface{}); ok {
-			for _, client := range clients {
-				if c, ok := client.(map[string]interface{}); ok {
-					if c["password"] == password {
-						result = append(result, inbound)
-						break
-					}
-				}
-			}
-		}
-	}
-
-	return result
+	inbounds, _ := s.clientService.FindInboundsByClientPassword(password)
+	return inbounds
 }
 
 // 生成 CDN 节点，返回proxiesMap和按inbound ID排序的组名列表
