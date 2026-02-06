@@ -232,6 +232,11 @@ func (p *process) Start() (err error) {
 		return common.NewErrorf("Failed to generate XRAY configuration files: %v", err)
 	}
 
+	// Migrate verifyPeerCertInNames to verifyPeerCertByName for Xray v26.2.2+ compatibility
+	configStr := string(data)
+	configStr = strings.ReplaceAll(configStr, "\"verifyPeerCertInNames\"", "\"verifyPeerCertByName\"")
+	data = []byte(configStr)
+
 	err = os.MkdirAll(config.GetLogFolder(), 0o770)
 	if err != nil {
 		logger.Warningf("Failed to create log folder: %s", err)
