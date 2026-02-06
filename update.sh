@@ -78,7 +78,24 @@ is_ip() {
     is_ipv4 "$1" || is_ipv6 "$1"
 }
 is_domain() {
-    [[ "$1" =~ ^([A-Za-z0-9](-*[A-Za-z0-9])*\.)+[A-Za-z]{2,}$ ]] && return 0 || return 1
+    [[ "$1" =~ ^([A-Za-z0-9](-*[A-Za-z0-9])*\.)+(xn--[a-z0-9]{2,}|[A-Za-z]{2,})$ ]] && return 0 || return 1
+}
+
+# Port helpers
+is_port_in_use() {
+    local port="$1"
+    if command -v ss >/dev/null 2>&1; then
+        ss -ltn 2>/dev/null | awk -v p=":${port}$" '$4 ~ p {exit 0} END {exit 1}'
+        return
+    fi
+    if command -v netstat >/dev/null 2>&1; then
+        netstat -lnt 2>/dev/null | awk -v p=":${port} " '$4 ~ p {exit 0} END {exit 1}'
+        return
+    fi
+    if command -v lsof >/dev/null 2>&1; then
+        lsof -nP -iTCP:${port} -sTCP:LISTEN >/dev/null 2>&1 && return 0
+    fi
+    return 1
 }
 
 gen_random_string() {
@@ -156,7 +173,7 @@ setup_ssl_certificate() {
     echo -e "${green}Issuing SSL certificate for ${domain}...${plain}"
     echo -e "${yellow}Note: Port 80 must be open and accessible from the internet${plain}"
     
-    ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt >/dev/null 2>&1
+    ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt --force >/dev/null 2>&1
     ~/.acme.sh/acme.sh --issue -d ${domain} --listen-v6 --standalone --httpport 80 --force
     
     if [ $? -ne 0 ]; then
@@ -205,7 +222,7 @@ setup_ip_certificate() {
 
     echo -e "${green}Setting up Let's Encrypt IP certificate (shortlived profile)...${plain}"
     echo -e "${yellow}Note: IP certificates are valid for ~6 days and will auto-renew.${plain}"
-    echo -e "${yellow}Port 80 must be open and accessible from the internet.${plain}"
+    echo -e "${yellow}Default listener is port 80. If you choose another port, ensure external port 80 forwards to it.${plain}"
 
     # Check for acme.sh
     if ! command -v ~/.acme.sh/acme.sh &>/dev/null; then
@@ -241,9 +258,46 @@ setup_ip_certificate() {
     # Set reload command for auto-renewal (add || true so it doesn't fail if service stopped)
     local reloadCmd="systemctl restart x-ui 2>/dev/null || rc-service x-ui restart 2>/dev/null || true"
 
+    # Choose port for HTTP-01 listener (default 80, prompt override)
+    local WebPort=""
+    read -rp "Port to use for ACME HTTP-01 listener (default 80): " WebPort
+    WebPort="${WebPort:-80}"
+    if ! [[ "${WebPort}" =~ ^[0-9]+$ ]] || ((WebPort < 1 || WebPort > 65535)); then
+        echo -e "${red}Invalid port provided. Falling back to 80.${plain}"
+        WebPort=80
+    fi
+    echo -e "${green}Using port ${WebPort} for standalone validation.${plain}"
+    if [[ "${WebPort}" -ne 80 ]]; then
+        echo -e "${yellow}Reminder: Let's Encrypt still connects on port 80; forward external port 80 to ${WebPort}.${plain}"
+    fi
+
+    # Ensure chosen port is available
+    while true; do
+        if is_port_in_use "${WebPort}"; then
+            echo -e "${yellow}Port ${WebPort} is currently in use.${plain}"
+
+            local alt_port=""
+            read -rp "Enter another port for acme.sh standalone listener (leave empty to abort): " alt_port
+            alt_port="${alt_port// /}"
+            if [[ -z "${alt_port}" ]]; then
+                echo -e "${red}Port ${WebPort} is busy; cannot proceed.${plain}"
+                return 1
+            fi
+            if ! [[ "${alt_port}" =~ ^[0-9]+$ ]] || ((alt_port < 1 || alt_port > 65535)); then
+                echo -e "${red}Invalid port provided.${plain}"
+                return 1
+            fi
+            WebPort="${alt_port}"
+            continue
+        else
+            echo -e "${green}Port ${WebPort} is free and ready for standalone validation.${plain}"
+            break
+        fi
+    done
+
     # Issue certificate with shortlived profile
     echo -e "${green}Issuing IP certificate for ${ipv4}...${plain}"
-    ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt >/dev/null 2>&1
+    ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt --force >/dev/null 2>&1
     
     ~/.acme.sh/acme.sh --issue \
         ${domain_args} \
@@ -251,12 +305,12 @@ setup_ip_certificate() {
         --server letsencrypt \
         --certificate-profile shortlived \
         --days 6 \
-        --httpport 80 \
+        --httpport ${WebPort} \
         --force
 
     if [ $? -ne 0 ]; then
         echo -e "${red}Failed to issue IP certificate${plain}"
-        echo -e "${yellow}Please ensure port 80 is open and accessible from the internet${plain}"
+        echo -e "${yellow}Please ensure port ${WebPort} is reachable (or forwarded from external port 80)${plain}"
         # Cleanup acme.sh data for both IPv4 and IPv6 if specified
         rm -rf ~/.acme.sh/${ipv4} 2>/dev/null
         [[ -n "$ipv6" ]] && rm -rf ~/.acme.sh/${ipv6} 2>/dev/null
@@ -383,7 +437,7 @@ ssl_cert_issue() {
     systemctl stop x-ui 2>/dev/null || rc-service x-ui stop 2>/dev/null
 
     # issue the certificate
-    ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
+    ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt --force
     ~/.acme.sh/acme.sh --issue -d ${domain} --listen-v6 --standalone --httpport ${WebPort} --force
     if [ $? -ne 0 ]; then
         echo -e "${red}Issuing certificate failed, please check logs.${plain}"
@@ -487,12 +541,13 @@ prompt_and_setup_ssl() {
     echo -e "${yellow}Choose SSL certificate setup method:${plain}"
     echo -e "${green}1.${plain} Let's Encrypt for Domain (90-day validity, auto-renews)"
     echo -e "${green}2.${plain} Let's Encrypt for IP Address (6-day validity, auto-renews)"
-    echo -e "${blue}Note:${plain} Both options require port 80 open. IP certs use shortlived profile."
+    echo -e "${green}3.${plain} Custom SSL Certificate (Path to existing files)"
+    echo -e "${blue}Note:${plain} Options 1 & 2 require port 80 open. Option 3 requires manual paths."
     read -rp "Choose an option (default 2 for IP): " ssl_choice
     ssl_choice="${ssl_choice// /}"  # Trim whitespace
     
-    # Default to 2 (IP cert) if not 1
-    if [[ "$ssl_choice" != "1" ]]; then
+    # Default to 2 (IP cert) if input is empty or invalid (not 1 or 3)
+    if [[ "$ssl_choice" != "1" && "$ssl_choice" != "3" ]]; then
         ssl_choice="2"
     fi
 
@@ -542,6 +597,67 @@ prompt_and_setup_ssl() {
         else
             systemctl restart x-ui >/dev/null 2>&1
         fi
+
+        ;;
+    3)
+        # User chose Custom Paths (User Provided) option
+        echo -e "${green}Using custom existing certificate...${plain}"
+        local custom_cert=""
+        local custom_key=""
+        local custom_domain=""
+
+        # 3.1 Request Domain to compose Panel URL later
+        read -rp "Please enter domain name certificate issued for: " custom_domain
+        custom_domain="${custom_domain// /}" # Убираем пробелы
+
+        # 3.2 Loop for Certificate Path
+        while true; do
+            read -rp "Input certificate path (keywords: .crt / fullchain): " custom_cert
+            # Strip quotes if present
+            custom_cert=$(echo "$custom_cert" | tr -d '"' | tr -d "'")
+
+            if [[ -f "$custom_cert" && -r "$custom_cert" && -s "$custom_cert" ]]; then
+                break
+            elif [[ ! -f "$custom_cert" ]]; then
+                echo -e "${red}Error: File does not exist! Try again.${plain}"
+            elif [[ ! -r "$custom_cert" ]]; then
+                echo -e "${red}Error: File exists but is not readable (check permissions)!${plain}"
+            else
+                echo -e "${red}Error: File is empty!${plain}"
+            fi
+        done
+
+        # 3.3 Loop for Private Key Path
+        while true; do
+            read -rp "Input private key path (keywords: .key / privatekey): " custom_key
+            # Strip quotes if present
+            custom_key=$(echo "$custom_key" | tr -d '"' | tr -d "'")
+
+            if [[ -f "$custom_key" && -r "$custom_key" && -s "$custom_key" ]]; then
+                break
+            elif [[ ! -f "$custom_key" ]]; then
+                echo -e "${red}Error: File does not exist! Try again.${plain}"
+            elif [[ ! -r "$custom_key" ]]; then
+                echo -e "${red}Error: File exists but is not readable (check permissions)!${plain}"
+            else
+                echo -e "${red}Error: File is empty!${plain}"
+            fi
+        done
+
+        # 3.4 Apply Settings via x-ui binary
+        ${xui_folder}/x-ui cert -webCert "$custom_cert" -webCertKey "$custom_key" >/dev/null 2>&1
+
+        # Set SSL_HOST for composing Panel URL
+        if [[ -n "$custom_domain" ]]; then
+            SSL_HOST="$custom_domain"
+        else
+            SSL_HOST="${server_ip}"
+        fi
+
+        echo -e "${green}✓ Custom certificate paths applied.${plain}"
+        echo -e "${yellow}Note: You are responsible for renewing these files externally.${plain}"
+
+        systemctl restart x-ui >/dev/null 2>&1 || rc-service x-ui restart >/dev/null 2>&1
         ;;
     *)
         echo -e "${red}Invalid option. Skipping SSL setup.${plain}"
@@ -683,6 +799,7 @@ update_x-ui() {
         rm ${xui_folder} -f >/dev/null 2>&1
         rm ${xui_folder}/x-ui.service -f >/dev/null 2>&1
         rm ${xui_folder}/x-ui.service.debian -f >/dev/null 2>&1
+        rm ${xui_folder}/x-ui.service.arch -f >/dev/null 2>&1
         rm ${xui_folder}/x-ui.service.rhel -f >/dev/null 2>&1
         rm ${xui_folder}/x-ui -f >/dev/null 2>&1
         rm ${xui_folder}/x-ui.sh -f >/dev/null 2>&1
@@ -765,6 +882,15 @@ update_x-ui() {
                         fi
                     fi
                 ;;
+                arch | manjaro | parch)
+                    if [ -f "x-ui.service.arch" ]; then
+                        echo -e "${green}Installing arch-like systemd unit...${plain}"
+                        cp -f x-ui.service.arch ${xui_service}/x-ui.service >/dev/null 2>&1
+                        if [[ $? -eq 0 ]]; then
+                            service_installed=true
+                        fi
+                    fi
+                ;;
                 *)
                     if [ -f "x-ui.service.rhel" ]; then
                         echo -e "${green}Installing rhel-like systemd unit...${plain}"
@@ -782,6 +908,9 @@ update_x-ui() {
                 case "${release}" in
                     ubuntu | debian | armbian)
                         ${curl_bin} -4fLRo ${xui_service}/x-ui.service https://raw.githubusercontent.com/PeterHgg/3x-ui/main/x-ui.service.debian >/dev/null 2>&1
+                    ;;
+                    arch | manjaro | parch)
+                        ${curl_bin} -4fLRo ${xui_service}/x-ui.service https://raw.githubusercontent.com/MHSanaei/3x-ui/main/x-ui.service.arch >/dev/null 2>&1
                     ;;
                     *)
                         ${curl_bin} -4fLRo ${xui_service}/x-ui.service https://raw.githubusercontent.com/PeterHgg/3x-ui/main/x-ui.service.rhel >/dev/null 2>&1

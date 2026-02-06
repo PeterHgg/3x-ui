@@ -5,6 +5,17 @@ on:
   push:
     tags:
       - "v*.*.*"
+    paths:
+      - '**.js'
+      - '**.css'
+      - '**.html'
+      - '**.sh'
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'x-ui.service.debian'
+      - 'x-ui.service.arch'
+      - 'x-ui.service.rhel'
   release:
     types: [published]
 
@@ -28,7 +39,7 @@ jobs:
           export CGO_ENABLED=1
           export GOOS=linux
           export GOARCH=amd64
-          
+
           # Use Bootlin prebuilt cross-toolchains (musl for static build)
           BOOTLIN_ARCH="x86-64"
           echo "Resolving Bootlin musl toolchain for arch=$BOOTLIN_ARCH"
@@ -47,21 +58,23 @@ jobs:
           go build -ldflags "-X 'github.com/mhsanaei/3x-ui/v2/config.version=${{ github.ref_name }}' -w -s -linkmode external -extldflags '-static'" -o xui-release -v main.go
           file xui-release
           ldd xui-release || echo "Static binary confirmed"
-          
+
           mkdir x-ui
           cp xui-release x-ui/
           cp x-ui.service.debian x-ui/
+          cp x-ui.service.arch x-ui/
           cp x-ui.service.rhel x-ui/
           cp x-ui.sh x-ui/
           mv x-ui/xui-release x-ui/x-ui
           mkdir x-ui/bin
           cd x-ui/bin
-          
-          # Download Xray dependencies
-          Xray_URL="https://github.com/XTLS/Xray-core/releases/download/v25.12.8/"
+
+          # Download dependencies (Updated to v26.2.2)
+          Xray_URL="https://github.com/XTLS/Xray-core/releases/download/v26.2.2/"
           wget -q ${Xray_URL}Xray-linux-64.zip
           unzip Xray-linux-64.zip
           rm -f Xray-linux-64.zip
+
           rm -f geoip.dat geosite.dat
           wget -q https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat
           wget -q https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
@@ -71,7 +84,7 @@ jobs:
           wget -q -O geosite_RU.dat https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geosite.dat
           mv xray xray-linux-amd64
           cd ../..
-          
+
       - name: Package
         run: tar -zcvf x-ui-linux-amd64.tar.gz x-ui
 
@@ -91,5 +104,102 @@ jobs:
           tag: ${{ github.ref }}
           file: x-ui-linux-amd64.tar.gz
           asset_name: x-ui-linux-amd64.tar.gz
+          overwrite: true
+          prerelease: false
+
+  # =================================
+  #  Windows Build (Preserved from Upstream)
+  # =================================
+  build-windows:
+    name: Build for Windows
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        platform:
+          - amd64
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      - name: Install MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-sqlite3
+            mingw-w64-x86_64-pkg-config
+
+      - name: Build 3X-UI for Windows (CGO)
+        shell: msys2 {0}
+        run: |
+          export PATH="/c/hostedtoolcache/windows/go/$(ls /c/hostedtoolcache/windows/go | sort -V | tail -n1)/x64/bin:$PATH"
+
+          export CGO_ENABLED=1
+          export GOOS=windows
+          export GOARCH=amd64
+          export CC=x86_64-w64-mingw32-gcc
+
+          which go
+          go version
+          gcc --version
+
+          go build -ldflags "-w -s" -o xui-release.exe -v main.go
+
+      - name: Copy and download resources
+        shell: pwsh
+        run: |
+          mkdir x-ui
+          Copy-Item xui-release.exe x-ui\x-ui.exe
+          mkdir x-ui\bin
+          cd x-ui\bin
+
+          # Download Xray for Windows (v26.2.2)
+          $Xray_URL = "https://github.com/XTLS/Xray-core/releases/download/v26.2.2/"
+          Invoke-WebRequest -Uri "${Xray_URL}Xray-windows-64.zip" -OutFile "Xray-windows-64.zip"
+          Expand-Archive -Path "Xray-windows-64.zip" -DestinationPath .
+          Remove-Item "Xray-windows-64.zip"
+          Remove-Item geoip.dat, geosite.dat -ErrorAction SilentlyContinue
+          Invoke-WebRequest -Uri "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" -OutFile "geoip.dat"
+          Invoke-WebRequest -Uri "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat" -OutFile "geosite.dat"
+          Invoke-WebRequest -Uri "https://github.com/chocolate4u/Iran-v2ray-rules/releases/latest/download/geoip.dat" -OutFile "geoip_IR.dat"
+          Invoke-WebRequest -Uri "https://github.com/chocolate4u/Iran-v2ray-rules/releases/latest/download/geosite.dat" -OutFile "geosite_IR.dat"
+          Invoke-WebRequest -Uri "https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geoip.dat" -OutFile "geoip_RU.dat"
+          Invoke-WebRequest -Uri "https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geosite.dat" -OutFile "geosite_RU.dat"
+          Rename-Item xray.exe xray-windows-amd64.exe
+          cd ..
+          # Copy-Item -Path ..\windows_files\* -Destination . -Recurse
+          cd ..
+
+      - name: Package to Zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path .\x-ui -DestinationPath "x-ui-windows-amd64.zip"
+
+      - name: Upload files to Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: x-ui-windows-amd64
+          path: ./x-ui-windows-amd64.zip
+
+      - name: Upload files to GH release
+        uses: svenstaro/upload-release-action@v2
+        if: |
+          (github.event_name == 'release' && github.event.action == 'published') ||
+          (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref }}
+          file: x-ui-windows-amd64.zip
+          asset_name: x-ui-windows-amd64.zip
           overwrite: true
           prerelease: false

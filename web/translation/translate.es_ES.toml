@@ -374,6 +374,16 @@
 "subJsonEnable" = "Habilitar/Deshabilitar el endpoint de suscripción JSON de forma independiente."
 "subTitle" = "Título de la Suscripción"
 "subTitleDesc" = "Título mostrado en el cliente de VPN"
+"subSupportUrl" = "URL de soporte"
+"subSupportUrlDesc" = "Enlace de soporte técnico mostrado en el cliente VPN"
+"subProfileUrl" = "URL del perfil"
+"subProfileUrlDesc" = "Un enlace a tu sitio web mostrado en el cliente VPN"
+"subAnnounce" = "Anuncio"
+"subAnnounceDesc" = "El texto del anuncio mostrado en el cliente VPN"
+"subEnableRouting" = "Habilitar enrutamiento"
+"subEnableRoutingDesc" = "Configuración global para habilitar el enrutamiento en el cliente VPN. (Solo para Happ)"
+"subRoutingRules" = "Reglas de enrutamiento"
+"subRoutingRulesDesc" = "Reglas de enrutamiento globales para el cliente VPN. (Solo para Happ)"
 "subListen" = "Listening IP"
 "subListenDesc" = "Dejar en blanco por defecto para monitorear todas las IPs."
 "subPort" = "Puerto de Suscripción"
@@ -530,6 +540,12 @@
 "endpoint" = "Punto final"
 "psk" = "Clave precompartida"
 "domainStrategy" = "Estrategia de dominio"
+
+[pages.xray.tun]
+"nameDesc" = "El nombre de la interfaz TUN. El valor predeterminado es 'xray0'"
+"mtuDesc" = "Unidad Máxima de Transmisión. El tamaño máximo de los paquetes de datos. El valor predeterminado es 1500"
+"userLevel" = "Nivel de Usuario"
+"userLevelDesc" = "Todas las conexiones realizadas a través de este entrada utilizarán este nivel de usuario. El valor predeterminado es 0"
 
 [pages.xray.dns]
 "enable" = "Habilitar DNS"
