@@ -232,10 +232,19 @@ func (p *process) Start() (err error) {
 		return common.NewErrorf("Failed to generate XRAY configuration files: %v", err)
 	}
 
+	configMap := map[string]any{}
+	err = json.Unmarshal(data, &configMap)
+	if err != nil {
+		return common.NewErrorf("Failed to parse XRAY config for migration: %v", err)
+	}
+
 	// Migrate verifyPeerCertInNames to verifyPeerCertByName for Xray v26.2.2+ compatibility
-	configStr := string(data)
-	configStr = strings.ReplaceAll(configStr, "\"verifyPeerCertInNames\"", "\"verifyPeerCertByName\"")
-	data = []byte(configStr)
+	migrateConfig(configMap)
+
+	data, err = json.MarshalIndent(configMap, "", "  ")
+	if err != nil {
+		return common.NewErrorf("Failed to generate XRAY configuration files: %v", err)
+	}
 
 	err = os.MkdirAll(config.GetLogFolder(), 0o770)
 	if err != nil {
@@ -294,4 +303,65 @@ func (p *process) Stop() error {
 func writeCrashReport(m []byte) error {
 	crashReportPath := config.GetBinFolderPath() + "/core_crash_" + time.Now().Format("20060102_150405") + ".log"
 	return os.WriteFile(crashReportPath, m, os.ModePerm)
+}
+
+// migrateConfig migrates old Xray config fields to new format for version compatibility
+// Specifically handles verifyPeerCertInNames (array) -> verifyPeerCertByName (string)
+func migrateConfig(jsonMap map[string]any) {
+	migrateInbounds(jsonMap)
+	migrateOutbounds(jsonMap)
+}
+
+// migrateInbounds migrates all inbound configs
+func migrateInbounds(jsonMap map[string]any) {
+	if inbounds, ok := jsonMap["inbounds"]; ok {
+		if inboundsSlice, ok := inbounds.([]any); ok {
+			for _, inbound := range inboundsSlice {
+				if inboundMap, ok := inbound.(map[string]any); ok {
+					if streamSettings, ok := inboundMap["streamSettings"].(map[string]any); ok {
+						if security, ok := streamSettings["security"].(string); ok && security == "tls" {
+							if tlsSettings, ok := streamSettings["tlsSettings"].(map[string]any); ok {
+								if oldField, ok := tlsSettings["verifyPeerCertInNames"]; ok {
+									// Migrate verifyPeerCertInNames (array) to verifyPeerCertByName (string, first element)
+									if oldArray, ok := oldField.([]any); ok && len(oldArray) > 0 {
+										if firstElement, ok := oldArray[0].(string); ok {
+											delete(tlsSettings, "verifyPeerCertInNames")
+											tlsSettings["verifyPeerCertByName"] = firstElement
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// migrateOutbounds migrates all outbound configs
+func migrateOutbounds(jsonMap map[string]any) {
+	if outbounds, ok := jsonMap["outbounds"]; ok {
+		if outboundsSlice, ok := outbounds.([]any); ok {
+			for _, outbound := range outboundsSlice {
+				if outboundMap, ok := outbound.(map[string]any); ok {
+					if streamSettings, ok := outboundMap["streamSettings"].(map[string]any); ok {
+						if security, ok := streamSettings["security"].(string); ok && security == "tls" {
+							if tlsSettings, ok := streamSettings["tlsSettings"].(map[string]any); ok {
+								if oldField, ok := tlsSettings["verifyPeerCertInNames"]; ok {
+									// Migrate verifyPeerCertInNames (array) to verifyPeerCertByName (string, first element)
+									if oldArray, ok := oldField.([]any); ok && len(oldArray) > 0 {
+										if firstElement, ok := oldArray[0].(string); ok {
+											delete(tlsSettings, "verifyPeerCertInNames")
+											tlsSettings["verifyPeerCertByName"] = firstElement
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 }
