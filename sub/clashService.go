@@ -303,6 +303,14 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, o
 	// 更新 "手动切换" 组的 proxies
 	groups[0].Proxies = topLevelProxies
 
+	// 4. 创建 "🎯 兜底规则" 组，用于 MATCH 兜底
+	fallbackGroup := ClashProxyGroup{
+		Name:    "🎯 兜底规则",
+		Type:    "select",
+		Proxies: []string{"🚀 手动切换", "DIRECT"},
+	}
+	groups = append(groups, fallbackGroup)
+
 	return groups
 }
 
@@ -393,7 +401,7 @@ func (s *ClashService) generateRules(customRules string) []string {
 		"RULE-SET,direct,DIRECT",
 		"GEOIP,LAN,DIRECT",
 		"GEOIP,CN,DIRECT",
-		"MATCH,🚀 手动切换",
+		"MATCH,🎯 兜底规则",
 	)
 
 	return rules
