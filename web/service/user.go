@@ -3,6 +3,8 @@ package service
 import (
 	"errors"
 
+	"time"
+
 	"github.com/mhsanaei/3x-ui/v2/database"
 	"github.com/mhsanaei/3x-ui/v2/database/model"
 	"github.com/mhsanaei/3x-ui/v2/logger"
@@ -96,7 +98,14 @@ func (s *UserService) CheckUser(username string, password string, twoFactorCode 
 			return nil
 		}
 
-		if gotp.NewDefaultTOTP(twoFactorToken).Now() != twoFactorCode {
+		// 允许时间漂移（上一个或下一个30秒窗口）
+		totp := gotp.NewDefaultTOTP(twoFactorToken)
+		now := time.Now().Unix()
+		isValid := totp.Verify(twoFactorCode, now) ||
+				   totp.Verify(twoFactorCode, now-30) ||
+				   totp.Verify(twoFactorCode, now+30)
+
+		if !isValid {
 			return nil
 		}
 	}
