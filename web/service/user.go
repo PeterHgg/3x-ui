@@ -98,12 +98,18 @@ func (s *UserService) CheckUser(username string, password string, twoFactorCode 
 			return nil
 		}
 
-		// 允许时间漂移（上一个或下一个30秒窗口）
+		// 允许时间漂移（前后各4个30秒窗口，即±120秒）
 		totp := gotp.NewDefaultTOTP(twoFactorToken)
 		now := time.Now().Unix()
 		isValid := totp.Verify(twoFactorCode, now) ||
-				   totp.Verify(twoFactorCode, now-30) ||
-				   totp.Verify(twoFactorCode, now+30)
+			totp.Verify(twoFactorCode, now-30) ||
+			totp.Verify(twoFactorCode, now+30) ||
+			totp.Verify(twoFactorCode, now-60) ||
+			totp.Verify(twoFactorCode, now+60) ||
+			totp.Verify(twoFactorCode, now-90) ||
+			totp.Verify(twoFactorCode, now+90) ||
+			totp.Verify(twoFactorCode, now-120) ||
+			totp.Verify(twoFactorCode, now+120)
 
 		if !isValid {
 			return nil
