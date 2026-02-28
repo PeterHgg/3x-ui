@@ -256,10 +256,7 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, o
 	// 手动切换组的 Proxies 列表
 	var topLevelProxies []string
 
-	// 收集所有单节点用于 "🐢 低速单节点" 组
-	var allIndividualProxies []string
-
-	// 2. 按排序后的顺序创建 load-balance 组
+	// 2. 按排序后的顺序创建 load-balance 组和 url-test 单节点组
 	for _, groupName := range orderedGroupNames {
 		proxies, ok := proxiesMap[groupName]
 		if !ok {
@@ -269,7 +266,6 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, o
 		var proxyNames []string
 		for _, p := range proxies {
 			proxyNames = append(proxyNames, p.Name)
-			allIndividualProxies = append(allIndividualProxies, p.Name)
 		}
 
 		groups = append(groups, ClashProxyGroup{
@@ -281,29 +277,25 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, o
 			Strategy: "round-robin", // 显式设置为 round-robin
 		})
 
-		// load-balance 组加入手动切换
-		topLevelProxies = append(topLevelProxies, groupName)
-	}
-
-	// 3. 创建 "🐢 低速单节点" 组 (放在最后面)
-	if len(allIndividualProxies) > 0 {
-		lowSpeedGroup := ClashProxyGroup{
-			Name:     "🐢 低速单节点",
-			Type:     "select",
-			Proxies:  allIndividualProxies,
+		// 创建对应的 url-test 单节点组
+		singleNodeGroupName := groupName + " 单节点"
+		groups = append(groups, ClashProxyGroup{
+			Name:     singleNodeGroupName,
+			Type:     "url-test",
+			Proxies:  proxyNames,
 			URL:      "http://cp.cloudflare.com/generate_204",
 			Interval: 300,
-		}
-		groups = append(groups, lowSpeedGroup)
+		})
 
-		// 低速单节点组也加入手动切换（放在最后）
-		topLevelProxies = append(topLevelProxies, "🐢 低速单节点")
+		// load-balance 组和单节点组都加入手动切换
+		topLevelProxies = append(topLevelProxies, groupName)
+		topLevelProxies = append(topLevelProxies, singleNodeGroupName)
 	}
 
 	// 更新 "手动切换" 组的 proxies
 	groups[0].Proxies = topLevelProxies
 
-	// 4. 创建 "🎯 兜底规则" 组，用于 MATCH 兜底
+	// 3. 创建 "🎯 兜底规则" 组，用于 MATCH 兜底
 	fallbackGroup := ClashProxyGroup{
 		Name:    "🎯 兜底规则",
 		Type:    "select",
