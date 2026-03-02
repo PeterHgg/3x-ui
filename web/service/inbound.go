@@ -5,6 +5,7 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -1039,40 +1040,44 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 		return err
 	}
 
-	// Propagate slave traffic to master
-	for _, traffic := range traffics {
-		if traffic.Up+traffic.Down == 0 {
-			continue
-		}
-		parts := strings.SplitN(traffic.Email, "_", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		portStr, originalEmail := parts[0], parts[1]
-		port, err := strconv.Atoi(portStr)
-		if err != nil {
-			continue
-		}
+		// Propagate slave traffic to master
+		for _, traffic := range traffics {
+			if traffic.Up+traffic.Down == 0 {
+				continue
+			}
+			parts := strings.SplitN(traffic.Email, "_", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			portStr, originalEmail := parts[0], parts[1]
+			// Ensure portStr is purely numeric to avoid misidentifying emails with underscores
+			if matched, _ := regexp.MatchString(`^\d+$`, portStr); !matched {
+				continue
+			}
+			port, err := strconv.Atoi(portStr)
+			if err != nil {
+				continue
+			}
 
-		// Find the slave inbound of this port
-		var slaveInbound model.Inbound
-		err = tx.Model(&model.Inbound{}).Where("port = ? AND sync_source_id > 0", port).First(&slaveInbound).Error
-		if err != nil {
-			continue
-		}
+			// Find the slave inbound of this port
+			var slaveInbound model.Inbound
+			err = tx.Model(&model.Inbound{}).Where("port = ? AND sync_source_id > 0", port).First(&slaveInbound).Error
+			if err != nil {
+				continue
+			}
 
-		// Update master client traffic record (increment by same delta)
-		err = tx.Model(&xray.ClientTraffic{}).
-			Where("inbound_id = ? AND email = ?", slaveInbound.SyncSourceId, originalEmail).
-			Updates(map[string]any{
-				"up":       gorm.Expr("up + ?", traffic.Up),
-				"down":     gorm.Expr("down + ?", traffic.Down),
-				"all_time": gorm.Expr("all_time + ?", traffic.Up+traffic.Down),
-			}).Error
-		if err != nil {
-			logger.Warningf("Failed to propagate traffic from slave %d to master %d: %v", slaveInbound.Id, slaveInbound.SyncSourceId, err)
+			// Update master client traffic record (increment by same delta)
+			err = tx.Model(&xray.ClientTraffic{}).
+				Where("inbound_id = ? AND email = ?", slaveInbound.SyncSourceId, originalEmail).
+				Updates(map[string]any{
+					"up":       gorm.Expr("up + ?", traffic.Up),
+					"down":     gorm.Expr("down + ?", traffic.Down),
+					"all_time": gorm.Expr("all_time + ?", traffic.Up+traffic.Down),
+				}).Error
+			if err != nil {
+				logger.Warningf("Failed to propagate traffic from slave %d to master %d: %v", slaveInbound.Id, slaveInbound.SyncSourceId, err)
+			}
 		}
-	}
 
 	return nil
 }
