@@ -1090,7 +1090,6 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 
 		// 2. Fallback: Legacy format (email only, no prefix)
 		//    This handles old clients or cases where Xray doesn't report with prefix.
-		//    We query ALL inbounds to find the first matching email.
 		var legacyTraffic xray.ClientTraffic
 		errLegacy := tx.Model(&xray.ClientTraffic{}).
 			Where("email = ?", traffic.Email).
@@ -1106,7 +1105,27 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 			continue // Successfully updated, move to next traffic
 		}
 
-		// 3. If still not found, log a warning for debugging
+		// 3. Fallback: Prefixed email but DB is raw email
+		//    This handles cases where the traffic report has a prefix but the DB doesn't.
+		if len(parts) == 2 {
+			email := parts[1]
+			var dbTraffic xray.ClientTraffic
+			errRaw := tx.Model(&xray.ClientTraffic{}).
+				Where("email = ?", email).
+				First(&dbTraffic).Error
+
+			if errRaw == nil {
+				dbTraffic.Up += traffic.Up
+				dbTraffic.Down += traffic.Down
+				dbTraffic.AllTime += (traffic.Up + traffic.Down)
+				dbTraffic.LastOnline = time.Now().UnixMilli()
+				onlineClients = append(onlineClients, email)
+				tx.Save(&dbTraffic)
+				continue
+			}
+		}
+
+		// 4. If still not found, log a warning for debugging
 		logger.Warningf("Traffic report for unknown email: %s (Up: %d, Down: %d)", traffic.Email, traffic.Up, traffic.Down)
 	}
 
@@ -1417,32 +1436,35 @@ func (s *InboundService) enrichInbounds(inbounds []*model.Inbound) {
 	for _, inbound := range inbounds {
 		if inbound.SyncSourceId > 0 {
 			for i := range inbound.ClientStats {
-				parts := strings.SplitN(inbound.ClientStats[i].Email, "_", 2)
-				if len(parts) == 2 {
-					masterEmail := strings.ToLower(parts[1])
-					masterKey := fmt.Sprintf("%d_%s", inbound.SyncSourceId, masterEmail)
-					if masterStat, ok := statsMap[masterKey]; ok {
-						// Use master's usage and limit
-						inbound.ClientStats[i].Up = masterStat.Up
-						inbound.ClientStats[i].Down = masterStat.Down
-						inbound.ClientStats[i].AllTime = masterStat.AllTime
-						inbound.ClientStats[i].Total = masterStat.Total
-						inbound.ClientStats[i].ExpiryTime = masterStat.ExpiryTime
-						inbound.ClientStats[i].Enable = masterStat.Enable
-					} else {
-						// Master Stat not in current inbounds list, fetch from DB
-						var ms xray.ClientTraffic
-						err := database.GetDB().Model(xray.ClientTraffic{}).
-							Where("inbound_id = ? AND email = ?", inbound.SyncSourceId, masterEmail).
-							First(&ms).Error
-						if err == nil {
-							inbound.ClientStats[i].Up = ms.Up
-							inbound.ClientStats[i].Down = ms.Down
-							inbound.ClientStats[i].AllTime = ms.AllTime
-							inbound.ClientStats[i].Total = ms.Total
-							inbound.ClientStats[i].ExpiryTime = ms.ExpiryTime
-							inbound.ClientStats[i].Enable = ms.Enable
-						}
+				masterEmail := strings.ToLower(inbound.ClientStats[i].Email)
+				// If the email in DB still has a prefix (e.g. from old sync), strip it for lookup
+				if parts := strings.SplitN(masterEmail, "_", 2); len(parts) == 2 {
+					if _, err := strconv.Atoi(parts[0]); err == nil {
+						masterEmail = parts[1]
+					}
+				}
+				masterKey := fmt.Sprintf("%d_%s", inbound.SyncSourceId, masterEmail)
+				if masterStat, ok := statsMap[masterKey]; ok {
+					// Use master's usage and limit
+					inbound.ClientStats[i].Up = masterStat.Up
+					inbound.ClientStats[i].Down = masterStat.Down
+					inbound.ClientStats[i].AllTime = masterStat.AllTime
+					inbound.ClientStats[i].Total = masterStat.Total
+					inbound.ClientStats[i].ExpiryTime = masterStat.ExpiryTime
+					inbound.ClientStats[i].Enable = masterStat.Enable
+				} else {
+					// Master Stat not in current inbounds list, fetch from DB
+					var ms xray.ClientTraffic
+					err := database.GetDB().Model(xray.ClientTraffic{}).
+						Where("inbound_id = ? AND email = ?", inbound.SyncSourceId, masterEmail).
+						First(&ms).Error
+					if err == nil {
+						inbound.ClientStats[i].Up = ms.Up
+						inbound.ClientStats[i].Down = ms.Down
+						inbound.ClientStats[i].AllTime = ms.AllTime
+						inbound.ClientStats[i].Total = ms.Total
+						inbound.ClientStats[i].ExpiryTime = ms.ExpiryTime
+						inbound.ClientStats[i].Enable = ms.Enable
 					}
 				}
 			}
@@ -2485,6 +2507,16 @@ func (s *InboundService) MigrationRequirements() {
 	if err != nil {
 		return
 	}
+
+	// Clean up prefixed emails in client_traffics (Migration to raw email)
+	err = tx.Exec(`
+		UPDATE client_traffics
+		SET email = SUBSTR(email, INSTR(email, '_') + 1)
+		WHERE email LIKE '%_%' AND SUBSTR(email, 1, INSTR(email, '_') - 1) GLOB '[0-9]*'
+	`).Error
+	if err != nil {
+		logger.Warningf("Failed to migrate prefixed emails in client_traffics: %v", err)
+	}
 }
 
 func (s *InboundService) MigrateDB() {
@@ -2804,9 +2836,13 @@ func (s *InboundService) SyncClientsFromInbound(targetId, sourceId int) (int, []
 		tx.Where("inbound_id = ? AND email = ?", targetId, oldEmail).Delete(&xray.ClientTraffic{})
 	}
 
-	// Add client stats for new clients (using the new email)
+	// Add client stats for new clients (only if they don't exist to preserve usage)
 	for _, clientToAdd := range clientsToAdd {
-		s.AddClientStat(tx, targetId, clientToAdd)
+		var count int64
+		tx.Model(&xray.ClientTraffic{}).Where("inbound_id = ? AND email = ?", targetId, clientToAdd.Email).Count(&count)
+		if count == 0 {
+			s.AddClientStat(tx, targetId, clientToAdd)
+		}
 	}
 
 	err = tx.Save(targetInbound).Error
@@ -2950,7 +2986,12 @@ func (s *InboundService) PerformFullSync(targetId int) (int, error) {
 	}()
 
 	// Delete all client stats for target inbound
-	tx.Where("inbound_id = ?", targetId).Delete(&xray.ClientTraffic{})
+	// We only delete stats that are NOT coming from the source to prevent wiping existing usage
+	sourceEmails := make([]string, 0, len(sourceClients))
+	for _, sc := range sourceClients {
+		sourceEmails = append(sourceEmails, sc.Email)
+	}
+	tx.Where("inbound_id = ? AND email NOT IN ?", targetId, sourceEmails).Delete(&xray.ClientTraffic{})
 
 	// Build new clients (raw emails, no port prefix)
 	nowTs := time.Now().Unix() * 1000
@@ -2992,9 +3033,13 @@ func (s *InboundService) PerformFullSync(targetId int) (int, error) {
 	newSettings, _ := json.MarshalIndent(targetSettings, "", "  ")
 	targetInbound.Settings = string(newSettings)
 
-	// Add client stats for new clients
+	// Add client stats for new clients (only if they don't exist to preserve usage)
 	for _, clientToAdd := range clientsToAdd {
-		s.AddClientStat(tx, targetId, clientToAdd)
+		var count int64
+		tx.Model(&xray.ClientTraffic{}).Where("inbound_id = ? AND email = ?", targetId, clientToAdd.Email).Count(&count)
+		if count == 0 {
+			s.AddClientStat(tx, targetId, clientToAdd)
+		}
 	}
 
 	err = tx.Save(targetInbound).Error
