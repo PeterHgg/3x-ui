@@ -999,57 +999,68 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 			continue
 		}
 
-		// Handle the InboundId_Email format from Xray
+		// 1. Try new format: InboundId_Email
 		parts := strings.SplitN(traffic.Email, "_", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		inboundId, err := strconv.Atoi(parts[0])
-		if err != nil {
-			continue
-		}
-		email := parts[1]
+		if len(parts) == 2 {
+			prefixId, err := strconv.Atoi(parts[0])
+			if err == nil {
+				email := parts[1]
+				var dbTraffic xray.ClientTraffic
 
-		// Update the specific client traffic record for this inbound
-		var dbTraffic xray.ClientTraffic
-		err = tx.Model(&xray.ClientTraffic{}).
-			Where("inbound_id = ? AND email = ?", inboundId, email).
-			First(&dbTraffic).Error
-
-		if err == nil {
-			dbTraffic.Up += traffic.Up
-			dbTraffic.Down += traffic.Down
-			dbTraffic.AllTime += (traffic.Up + traffic.Down)
-			dbTraffic.LastOnline = time.Now().UnixMilli()
-			onlineClients = append(onlineClients, email)
-
-			err = tx.Save(&dbTraffic).Error
-			if err != nil {
-				logger.Warning("AddClientTraffic update data ", err)
-			}
-		} else {
-			// Propagate slave traffic to master
-			// Handle legacy port_email format for sync
-			if matched, _ := regexp.MatchString(`^\d+$`, parts[0]); matched {
-				port, _ := strconv.Atoi(parts[0])
-				// Find the slave inbound of this port
-				var slaveInbound model.Inbound
-				err = tx.Model(&model.Inbound{}).Where("port = ? AND sync_source_id > 0", port).First(&slaveInbound).Error
+				// On slave nodes, the prefixId is the Master ID (SyncSourceId).
+				// We need to map it to the local InboundId.
+				var targetInboundId int
+				var inbound model.Inbound
+				// Try direct match first (Master/Standalone node)
+				err = tx.Model(&model.Inbound{}).Where("id = ?", prefixId).First(&inbound).Error
 				if err == nil {
-					// Update master client traffic record (increment by same delta)
+					targetInboundId = inbound.Id
+				} else {
+					// Try to find slave inbound mapping to this Master ID
+					err = tx.Model(&model.Inbound{}).Where("sync_source_id = ?", prefixId).First(&inbound).Error
+					if err == nil {
+						targetInboundId = inbound.Id
+					}
+				}
+
+				if targetInboundId > 0 {
 					err = tx.Model(&xray.ClientTraffic{}).
-						Where("inbound_id = ? AND email = ?", slaveInbound.SyncSourceId, email).
-						Updates(map[string]any{
-							"up":       gorm.Expr("up + ?", traffic.Up),
-							"down":     gorm.Expr("down + ?", traffic.Down),
-							"all_time": gorm.Expr("all_time + ?", traffic.Up+traffic.Down),
-						}).Error
-					if err != nil {
-						logger.Warningf("Failed to propagate traffic from slave %d to master %d: %v", slaveInbound.Id, slaveInbound.SyncSourceId, err)
+						Where("inbound_id = ? AND email = ?", targetInboundId, email).
+						First(&dbTraffic).Error
+
+					if err == nil {
+						dbTraffic.Up += traffic.Up
+						dbTraffic.Down += traffic.Down
+						dbTraffic.AllTime += (traffic.Up + traffic.Down)
+						dbTraffic.LastOnline = time.Now().UnixMilli()
+						onlineClients = append(onlineClients, email)
+						tx.Save(&dbTraffic)
+						continue // Successfully updated, move to next traffic
 					}
 				}
 			}
 		}
+
+		// 2. Fallback: Legacy format (email only, no prefix)
+		//    This handles old clients or cases where Xray doesn't report with prefix.
+		//    We query ALL inbounds to find the first matching email.
+		var legacyTraffic xray.ClientTraffic
+		errLegacy := tx.Model(&xray.ClientTraffic{}).
+			Where("email = ?", traffic.Email).
+			First(&legacyTraffic).Error
+
+		if errLegacy == nil {
+			legacyTraffic.Up += traffic.Up
+			legacyTraffic.Down += traffic.Down
+			legacyTraffic.AllTime += (traffic.Up + traffic.Down)
+			legacyTraffic.LastOnline = time.Now().UnixMilli()
+			onlineClients = append(onlineClients, traffic.Email)
+			tx.Save(&legacyTraffic)
+			continue // Successfully updated, move to next traffic
+		}
+
+		// 3. If still not found, log a warning for debugging
+		logger.Warningf("Traffic report for unknown email: %s (Up: %d, Down: %d)", traffic.Email, traffic.Up, traffic.Down)
 	}
 
 	// Set onlineUsers (unique emails)
@@ -1063,7 +1074,6 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 	}
 	p.SetOnlineClients(finalOnline)
 
-	// ... (Slave propagation logic continues)
 	return nil
 }
 

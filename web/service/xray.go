@@ -153,8 +153,13 @@ func (s *XrayService) GetXrayConfig() (*xray.Config, error) {
 					}
 				}
 				// Prefix email with inbound ID for unique traffic accounting
+				// If it's a slave inbound, use the Master (SyncSourceId) ID to ensure traffic syncs back correctly
 				if email, ok := c["email"].(string); ok {
-					c["email"] = fmt.Sprintf("%d_%s", inbound.Id, email)
+					accountID := inbound.Id
+					if inbound.SyncSourceId > 0 {
+						accountID = inbound.SyncSourceId
+					}
+					c["email"] = fmt.Sprintf("%d_%s", accountID, email)
 				}
 				final_clients = append(final_clients, any(c))
 			}
