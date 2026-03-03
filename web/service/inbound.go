@@ -994,91 +994,76 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 
 	onlineClients := make([]string, 0)
 
-	emails := make([]string, 0, len(traffics))
 	for _, traffic := range traffics {
-		emails = append(emails, traffic.Email)
-	}
-	dbClientTraffics := make([]*xray.ClientTraffic, 0, len(traffics))
-	err = tx.Model(xray.ClientTraffic{}).Where("email IN (?)", emails).Find(&dbClientTraffics).Error
-	if err != nil {
-		return err
-	}
+		if traffic.Up+traffic.Down == 0 {
+			continue
+		}
 
-	// Avoid empty slice error
-	if len(dbClientTraffics) == 0 {
-		return nil
-	}
+		// Handle the InboundId_Email format from Xray
+		parts := strings.SplitN(traffic.Email, "_", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		inboundId, err := strconv.Atoi(parts[0])
+		if err != nil {
+			continue
+		}
+		email := parts[1]
 
-	dbClientTraffics, err = s.adjustTraffics(tx, dbClientTraffics)
-	if err != nil {
-		return err
-	}
+		// Update the specific client traffic record for this inbound
+		var dbTraffic xray.ClientTraffic
+		err = tx.Model(&xray.ClientTraffic{}).
+			Where("inbound_id = ? AND email = ?", inboundId, email).
+			First(&dbTraffic).Error
 
-	for dbTraffic_index := range dbClientTraffics {
-		for traffic_index := range traffics {
-			if dbClientTraffics[dbTraffic_index].Email == traffics[traffic_index].Email {
-				dbClientTraffics[dbTraffic_index].Up += traffics[traffic_index].Up
-				dbClientTraffics[dbTraffic_index].Down += traffics[traffic_index].Down
-				dbClientTraffics[dbTraffic_index].AllTime += (traffics[traffic_index].Up + traffics[traffic_index].Down)
+		if err == nil {
+			dbTraffic.Up += traffic.Up
+			dbTraffic.Down += traffic.Down
+			dbTraffic.AllTime += (traffic.Up + traffic.Down)
+			dbTraffic.LastOnline = time.Now().UnixMilli()
+			onlineClients = append(onlineClients, email)
 
-				// Add user in onlineUsers array on traffic
-				if traffics[traffic_index].Up+traffics[traffic_index].Down > 0 {
-					onlineClients = append(onlineClients, traffics[traffic_index].Email)
-					dbClientTraffics[dbTraffic_index].LastOnline = time.Now().UnixMilli()
+			err = tx.Save(&dbTraffic).Error
+			if err != nil {
+				logger.Warning("AddClientTraffic update data ", err)
+			}
+		} else {
+			// Propagate slave traffic to master
+			// Handle legacy port_email format for sync
+			if matched, _ := regexp.MatchString(`^\d+$`, parts[0]); matched {
+				port, _ := strconv.Atoi(parts[0])
+				// Find the slave inbound of this port
+				var slaveInbound model.Inbound
+				err = tx.Model(&model.Inbound{}).Where("port = ? AND sync_source_id > 0", port).First(&slaveInbound).Error
+				if err == nil {
+					// Update master client traffic record (increment by same delta)
+					err = tx.Model(&xray.ClientTraffic{}).
+						Where("inbound_id = ? AND email = ?", slaveInbound.SyncSourceId, email).
+						Updates(map[string]any{
+							"up":       gorm.Expr("up + ?", traffic.Up),
+							"down":     gorm.Expr("down + ?", traffic.Down),
+							"all_time": gorm.Expr("all_time + ?", traffic.Up+traffic.Down),
+						}).Error
+					if err != nil {
+						logger.Warningf("Failed to propagate traffic from slave %d to master %d: %v", slaveInbound.Id, slaveInbound.SyncSourceId, err)
+					}
 				}
-				break
 			}
 		}
 	}
 
-	// Set onlineUsers
-	p.SetOnlineClients(onlineClients)
-
-	err = tx.Save(dbClientTraffics).Error
-	if err != nil {
-		logger.Warning("AddClientTraffic update data ", err)
-		return err
+	// Set onlineUsers (unique emails)
+	uniqueOnline := make(map[string]struct{})
+	for _, e := range onlineClients {
+		uniqueOnline[e] = struct{}{}
 	}
+	finalOnline := make([]string, 0, len(uniqueOnline))
+	for k := range uniqueOnline {
+		finalOnline = append(finalOnline, k)
+	}
+	p.SetOnlineClients(finalOnline)
 
-		// Propagate slave traffic to master
-		for _, traffic := range traffics {
-			if traffic.Up+traffic.Down == 0 {
-				continue
-			}
-			parts := strings.SplitN(traffic.Email, "_", 2)
-			if len(parts) != 2 {
-				continue
-			}
-			portStr, originalEmail := parts[0], parts[1]
-			// Ensure portStr is purely numeric to avoid misidentifying emails with underscores
-			if matched, _ := regexp.MatchString(`^\d+$`, portStr); !matched {
-				continue
-			}
-			port, err := strconv.Atoi(portStr)
-			if err != nil {
-				continue
-			}
-
-			// Find the slave inbound of this port
-			var slaveInbound model.Inbound
-			err = tx.Model(&model.Inbound{}).Where("port = ? AND sync_source_id > 0", port).First(&slaveInbound).Error
-			if err != nil {
-				continue
-			}
-
-			// Update master client traffic record (increment by same delta)
-			err = tx.Model(&xray.ClientTraffic{}).
-				Where("inbound_id = ? AND email = ?", slaveInbound.SyncSourceId, originalEmail).
-				Updates(map[string]any{
-					"up":       gorm.Expr("up + ?", traffic.Up),
-					"down":     gorm.Expr("down + ?", traffic.Down),
-					"all_time": gorm.Expr("all_time + ?", traffic.Up+traffic.Down),
-				}).Error
-			if err != nil {
-				logger.Warningf("Failed to propagate traffic from slave %d to master %d: %v", slaveInbound.Id, slaveInbound.SyncSourceId, err)
-			}
-		}
-
+	// ... (Slave propagation logic continues)
 	return nil
 }
 
@@ -1971,11 +1956,18 @@ func (s *InboundService) ResetAllClientTraffics(id int) error {
 	})
 }
 
-func (s *InboundService) ResetAllTraffics() error {
+func (s *InboundService) ResetAllTraffics(id int) error {
 	db := database.GetDB()
+	whereText := "user_id > 0"
+	if id > 0 {
+		whereText += " AND id = ?"
+		return db.Model(model.Inbound{}).
+			Where(whereText, id).
+			Updates(map[string]any{"up": 0, "down": 0}).Error
+	}
 
 	result := db.Model(model.Inbound{}).
-		Where("user_id > ?", 0).
+		Where(whereText).
 		Updates(map[string]any{"up": 0, "down": 0})
 
 	err := result.Error

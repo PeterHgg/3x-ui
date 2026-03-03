@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"runtime"
 	"sync"
 
@@ -150,6 +151,10 @@ func (s *XrayService) GetXrayConfig() (*xray.Config, error) {
 					if c["flow"] == "xtls-rprx-vision-udp443" {
 						c["flow"] = "xtls-rprx-vision"
 					}
+				}
+				// Prefix email with inbound ID for unique traffic accounting
+				if email, ok := c["email"].(string); ok {
+					c["email"] = fmt.Sprintf("%d_%s", inbound.Id, email)
 				}
 				final_clients = append(final_clients, any(c))
 			}

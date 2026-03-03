@@ -296,7 +296,7 @@ func (a *InboundController) resetClientTraffic(c *gin.Context) {
 
 // resetAllTraffics resets all traffic counters across all inbounds.
 func (a *InboundController) resetAllTraffics(c *gin.Context) {
-	err := a.inboundService.ResetAllTraffics()
+	err := a.inboundService.ResetAllTraffics(0)
 	if err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
