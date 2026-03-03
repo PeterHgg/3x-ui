@@ -266,7 +266,29 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 	needRestart := false
 	if inbound.Enable {
 		s.xrayApi.Init(p.GetAPIPort())
-		inboundJson, err1 := json.MarshalIndent(inbound.GenXrayInboundConfig(), "", "  ")
+		inboundConfig := inbound.GenXrayInboundConfig()
+
+		// Inject unique prefixes for traffic accounting via API as well
+		var settings map[string]any
+		json.Unmarshal(inboundConfig.Settings, &settings)
+		if clients, ok := settings["clients"].([]any); ok {
+			accountID := inbound.Id
+			if inbound.SyncSourceId > 0 {
+				accountID = inbound.SyncSourceId
+			}
+			for i, client := range clients {
+				if c, ok := client.(map[string]any); ok {
+					if email, ok := c["email"].(string); ok {
+						c["email"] = fmt.Sprintf("%d_%s", accountID, email)
+						clients[i] = c
+					}
+				}
+			}
+			settings["clients"] = clients
+			inboundConfig.Settings, _ = json.Marshal(settings)
+		}
+
+		inboundJson, err1 := json.MarshalIndent(inboundConfig, "", "  ")
 		if err1 != nil {
 			logger.Debug("Unable to marshal inbound config:", err1)
 		}
@@ -617,8 +639,14 @@ func (s *InboundService) AddInboundClient(data *model.Inbound) (bool, error) {
 				if oldInbound.Protocol == "shadowsocks" {
 					cipher = oldSettings["method"].(string)
 				}
+
+				accountID := oldInbound.Id
+				if oldInbound.SyncSourceId > 0 {
+					accountID = oldInbound.SyncSourceId
+				}
+
 				err1 := s.xrayApi.AddUser(string(oldInbound.Protocol), oldInbound.Tag, map[string]any{
-					"email":    client.Email,
+					"email":    fmt.Sprintf("%d_%s", accountID, client.Email),
 					"id":       client.ID,
 					"security": client.Security,
 					"flow":     client.Flow,
@@ -888,8 +916,14 @@ func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId strin
 			if oldInbound.Protocol == "shadowsocks" {
 				cipher = oldSettings["method"].(string)
 			}
+
+			accountID := oldInbound.Id
+			if oldInbound.SyncSourceId > 0 {
+				accountID = oldInbound.SyncSourceId
+			}
+
 			err1 := s.xrayApi.AddUser(string(oldInbound.Protocol), oldInbound.Tag, map[string]any{
-				"email":    clients[0].Email,
+				"email":    fmt.Sprintf("%d_%s", accountID, clients[0].Email),
 				"id":       clients[0].ID,
 				"security": clients[0].Security,
 				"flow":     clients[0].Flow,
@@ -1895,8 +1929,14 @@ func (s *InboundService) ResetClientTraffic(id int, clientEmail string) (bool, e
 					}
 					cipher = oldSettings["method"].(string)
 				}
+
+				accountID := inbound.Id
+				if inbound.SyncSourceId > 0 {
+					accountID = inbound.SyncSourceId
+				}
+
 				err1 := s.xrayApi.AddUser(string(inbound.Protocol), inbound.Tag, map[string]any{
-					"email":    client.Email,
+					"email":    fmt.Sprintf("%d_%s", accountID, client.Email),
 					"id":       client.ID,
 					"security": client.Security,
 					"flow":     client.Flow,
@@ -2751,10 +2791,15 @@ func (s *InboundService) SyncClientsFromInbound(targetId, sourceId int) (int, []
 			cipher, _ = targetSettingsMap["method"].(string)
 		}
 
+		accountID := targetInbound.Id
+		if targetInbound.SyncSourceId > 0 {
+			accountID = targetInbound.SyncSourceId
+		}
+
 		for _, clientToAdd := range clientsToAdd {
 			if clientToAdd.Enable {
 				err1 := s.xrayApi.AddUser(string(targetInbound.Protocol), targetInbound.Tag, map[string]any{
-					"email":    clientToAdd.Email,
+					"email":    fmt.Sprintf("%d_%s", accountID, clientToAdd.Email),
 					"id":       clientToAdd.ID,
 					"security": clientToAdd.Security,
 					"flow":     clientToAdd.Flow,
@@ -2933,10 +2978,15 @@ func (s *InboundService) PerformFullSync(targetId int) (int, error) {
 			cipher, _ = targetSettingsMap["method"].(string)
 		}
 
+		accountID := targetInbound.Id
+		if targetInbound.SyncSourceId > 0 {
+			accountID = targetInbound.SyncSourceId
+		}
+
 		for _, clientToAdd := range clientsToAdd {
 			if clientToAdd.Enable {
 				s.xrayApi.AddUser(string(targetInbound.Protocol), targetInbound.Tag, map[string]any{
-					"email":    clientToAdd.Email,
+					"email":    fmt.Sprintf("%d_%s", accountID, clientToAdd.Email),
 					"id":       clientToAdd.ID,
 					"security": clientToAdd.Security,
 					"flow":     clientToAdd.Flow,

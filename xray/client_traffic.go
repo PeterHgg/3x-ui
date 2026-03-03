@@ -6,7 +6,7 @@ type ClientTraffic struct {
 	Id         int    `json:"id" form:"id" gorm:"primaryKey;autoIncrement"`
 	InboundId  int    `json:"inboundId" form:"inboundId"`
 	Enable     bool   `json:"enable" form:"enable"`
-	Email      string `json:"email" form:"email" gorm:"unique"`
+	Email      string `json:"email" form:"email"`
 	UUID       string `json:"uuid" form:"uuid" gorm:"-"`
 	SubId      string `json:"subId" form:"subId" gorm:"-"`
 	Up         int64  `json:"up" form:"up"`

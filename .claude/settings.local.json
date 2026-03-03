@@ -31,7 +31,10 @@
       "Bash(docker-compose restart:*)",
       "Bash(docker-compose down:*)",
       "Bash(docker-compose build:*)",
-      "WebFetch(domain:aio.5468936.xyz)"
+      "WebFetch(domain:aio.5468936.xyz)",
+      "Bash(go doc github.com/xlzd/gotp)",
+      "Bash(go doc github.com/xlzd/gotp.TOTP)",
+      "Bash(go doc github.com/xlzd/gotp.TOTP.Verify)"
     ],
     "additionalDirectories": [
       "C:\\Users\\BXM\\.gemini\\antigravity\\scratch\\douyin-wechat-share\\public"
