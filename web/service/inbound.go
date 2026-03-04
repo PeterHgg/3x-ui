@@ -1054,14 +1054,14 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 		// If we couldn't extract a valid inbound ID, skip this traffic
 		// This prevents updating wrong users when email doesn't have a valid ID prefix
 		if inboundID <= 0 {
-			logger.Debugf("Skipping traffic update for email %s: no valid inbound ID in prefix", fullEmail)
+			logger.Infof("Skipping traffic update for email %s: no valid inbound ID in prefix", fullEmail)
 			continue
 		}
 
-		logger.Debugf("Processing traffic for fullEmail: '%s', extracted inboundID: %d, base email: '%s', up: %d, down: %d", fullEmail, inboundID, email, traffic.Up, traffic.Down)
+		logger.Infof("Processing traffic for fullEmail: '%s', extracted inboundID: %d, base email: '%s', up: %d, down: %d", fullEmail, inboundID, email, traffic.Up, traffic.Down)
 
 		if email == "" {
-			logger.Debugf("Skipping traffic update for empty email (fullEmail: '%s')", fullEmail)
+			logger.Infof("Skipping traffic update for empty email (fullEmail: '%s')", fullEmail)
 			continue
 		}
 
@@ -1075,15 +1075,15 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 				"up":          gorm.Expr("up + ?", traffic.Up),
 				"down":        gorm.Expr("down + ?", traffic.Down),
 				"all_time":    gorm.Expr("COALESCE(all_time, 0) + ?", traffic.Up+traffic.Down),
-				"total":       tx.Table("client_traffics").Select("total").Where("(email = ? OR email = ?) AND inbound_id = ?", email, fullEmail, inboundID).Limit(1),
-				"expiry_time": tx.Table("client_traffics").Select("expiry_time").Where("(email = ? OR email = ?) AND inbound_id = ?", email, fullEmail, inboundID).Limit(1),
-				"enable":      tx.Table("client_traffics").Select("enable").Where("(email = ? OR email = ?) AND inbound_id = ?", email, fullEmail, inboundID).Limit(1),
+				"total":       tx.Table("client_traffics").Select("total").Where("email = ? AND inbound_id = ?", email, inboundID).Limit(1),
+				"expiry_time": tx.Table("client_traffics").Select("expiry_time").Where("email = ? AND inbound_id = ?", email, inboundID).Limit(1),
+				"enable":      tx.Table("client_traffics").Select("enable").Where("email = ? AND inbound_id = ?", email, inboundID).Limit(1),
 				"last_online": nowMs,
 			})
 		err = res.Error
 
 		if err == nil {
-			logger.Debugf("Traffic updated for email: '%s', rows affected: %d", email, res.RowsAffected)
+			logger.Infof("Traffic updated for email: '%s' (inboundID: %d), rows affected: %d", email, inboundID, res.RowsAffected)
 			onlineClients = append(onlineClients, email)
 			// Also add the full prefixed email to ensure both master and slave can show online status if needed
 			onlineClients = append(onlineClients, fullEmail)
