@@ -5,18 +5,6 @@ on:
   push:
     tags:
       - "v*.*.*"
-    paths:
-      - '**.js'
-      - '**.css'
-      - '**.html'
-      - '**.sh'
-      - '**.go'
-      - 'go.mod'
-      - 'go.sum'
-      - 'config/version'
-      - 'x-ui.service.debian'
-      - 'x-ui.service.arch'
-      - 'x-ui.service.rhel'
   release:
     types: [published]
 
