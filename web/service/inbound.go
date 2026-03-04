@@ -1060,12 +1060,15 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 
 		// Direct match by email and atomic update to prevent race conditions.
 		// We update ALL records that share this email and the identified inboundID (master/slave).
+		// We also sync the master's quota settings to slaves for consistency.
 		err = tx.Model(&xray.ClientTraffic{}).
 			Where("email = ? AND (inbound_id = ? OR inbound_id IN (SELECT id FROM inbounds WHERE sync_source_id = ?))", email, inboundID, inboundID).
 			Updates(map[string]any{
 				"up":          gorm.Expr("up + ?", traffic.Up),
 				"down":        gorm.Expr("down + ?", traffic.Down),
 				"all_time":    gorm.Expr("COALESCE(all_time, 0) + ?", traffic.Up+traffic.Down),
+				"total":       tx.Table("client_traffics").Select("total").Where("email = ? AND inbound_id = ?", email, inboundID),
+				"expiry_time": tx.Table("client_traffics").Select("expiry_time").Where("email = ? AND inbound_id = ?", email, inboundID),
 				"last_online": time.Now().UnixMilli(),
 			}).Error
 
@@ -1297,35 +1300,49 @@ func (s *InboundService) disableInvalidClients(tx *gorm.DB) (bool, int64, error)
 	now := time.Now().Unix() * 1000
 	needRestart := false
 
+	// 1. Identify all master-slave pairs that need disabling based on master's usage.
+	// We use a subquery to find emails that exceed limits on their MASTER record.
+	err := tx.Model(xray.ClientTraffic{}).
+		Where("email IN (SELECT email FROM client_traffics ct JOIN inbounds i ON ct.inbound_id = i.id WHERE i.sync_source_id = 0 AND ((ct.total > 0 AND ct.up + ct.down >= ct.total) OR (ct.expiry_time > 0 AND ct.expiry_time <= ?)))", now).
+		Where("enable = ?", true).
+		Update("enable", false).Error
+	if err != nil {
+		return false, 0, err
+	}
+
+	// 2. Real-time removal from Xray API for all affected nodes (Master & Slaves)
 	if p != nil {
 		var results []struct {
-			Tag            string
-			Email          string
-			InboundId      int
-			SyncSourceId   int
+			Tag          string
+			Email        string
+			InboundId    int
+			SyncSourceId int
 		}
 
-		err := tx.Table("inbounds").
+		// Select all (Tag, PrefixedEmail) for clients that are now disabled in DB
+		err = tx.Table("inbounds").
 			Select("inbounds.tag, client_traffics.email, inbounds.id as inbound_id, inbounds.sync_source_id").
-			Joins("JOIN client_traffics ON (inbounds.id = client_traffics.inbound_id OR (inbounds.sync_source_id > 0 AND inbounds.sync_source_id = client_traffics.inbound_id))").
-			Where("((client_traffics.total > 0 AND client_traffics.up + client_traffics.down >= client_traffics.total) OR (client_traffics.expiry_time > 0 AND client_traffics.expiry_time <= ?)) AND client_traffics.enable = ?", now, true).
+			Joins("JOIN client_traffics ON inbounds.id = client_traffics.inbound_id").
+			Where("client_traffics.enable = ?", false).
 			Scan(&results).Error
 		if err != nil {
 			return false, 0, err
 		}
+
 		s.xrayApi.Init(p.GetAPIPort())
 		for _, result := range results {
-			email := result.Email
+			accountID := result.InboundId
 			if result.SyncSourceId > 0 {
-				email = fmt.Sprintf("%d_%s", result.SyncSourceId, email)
+				accountID = result.SyncSourceId
 			}
-			err1 := s.xrayApi.RemoveUser(result.Tag, email)
+			prefixedEmail := fmt.Sprintf("%d_%s", accountID, result.Email)
+
+			err1 := s.xrayApi.RemoveUser(result.Tag, prefixedEmail)
 			if err1 == nil {
-				logger.Debug("Client disabled by api:", result.Email)
+				logger.Debug("Client disabled by api:", prefixedEmail)
 			} else {
-				if strings.Contains(err1.Error(), fmt.Sprintf("User %s not found.", result.Email)) {
-					logger.Debug("User is already disabled. Nothing to do more...")
-				} else {
+				// If not found, it might have been already removed or never added
+				if !strings.Contains(err1.Error(), "not found") {
 					logger.Debug("Error in disabling client by api:", err1)
 					needRestart = true
 				}
@@ -1333,27 +1350,19 @@ func (s *InboundService) disableInvalidClients(tx *gorm.DB) (bool, int64, error)
 		}
 		s.xrayApi.Close()
 	}
-	// Fetch affected inbounds before update to trigger sync
+
+	// 3. Trigger sync for affected inbounds
 	var affectedInboundIds []int
 	tx.Model(xray.ClientTraffic{}).
-		Where("((total > 0 and up + down >= total) or (expiry_time > 0 and expiry_time <= ?)) and enable = ?", now, true).
+		Where("enable = ?", false).
 		Distinct("inbound_id").
 		Pluck("inbound_id", &affectedInboundIds)
 
-	result := tx.Model(xray.ClientTraffic{}).
-		Where("((total > 0 and up + down >= total) or (expiry_time > 0 and expiry_time <= ?)) and enable = ?", now, true).
-		Update("enable", false)
-	err := result.Error
-	count := result.RowsAffected
-
-	if count > 0 {
-		for _, id := range affectedInboundIds {
-			// If it's a master, trigger sync to slaves
-			go s.TriggerSyncToSlaves(id)
-		}
+	for _, id := range affectedInboundIds {
+		go s.TriggerSyncToSlaves(id)
 	}
 
-	return needRestart, count, err
+	return needRestart, int64(len(affectedInboundIds)), nil
 }
 
 func (s *InboundService) enrichInbounds(inbounds []*model.Inbound) {
@@ -2979,12 +2988,19 @@ func (s *InboundService) PerformFullSync(targetId int) (int, error) {
 	newSettings, _ := json.MarshalIndent(targetSettings, "", "  ")
 	targetInbound.Settings = string(newSettings)
 
-	// Add client stats for new clients (only if they don't exist to preserve usage)
+	// Add or Update client stats for sync targets
 	for _, clientToAdd := range clientsToAdd {
-		var count int64
-		tx.Model(&xray.ClientTraffic{}).Where("inbound_id = ? AND email = ?", targetId, clientToAdd.Email).Count(&count)
-		if count == 0 {
+		var existing xray.ClientTraffic
+		err = tx.Model(&xray.ClientTraffic{}).Where("inbound_id = ? AND email = ?", targetId, clientToAdd.Email).First(&existing).Error
+		if err == gorm.ErrRecordNotFound {
 			s.AddClientStat(tx, targetId, clientToAdd)
+		} else if err == nil {
+			// Update quota and status from source
+			tx.Model(&existing).Updates(map[string]any{
+				"total":       clientToAdd.TotalGB,
+				"expiry_time": clientToAdd.ExpiryTime,
+				"enable":      clientToAdd.Enable,
+			})
 		}
 	}
 
