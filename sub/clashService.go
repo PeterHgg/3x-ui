@@ -54,7 +54,7 @@ func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, cou
 	}
 
 	// 生成 CDN 节点（按备注分组）
-	proxiesMap, orderedGroupNames := s.generateCDNProxies(baseNodes, cdnDomain, count, prefix, subPort)
+	proxiesMap, orderedGroupNames := s.generateCDNProxies(baseNodes, cdnDomain, count, prefix, subPort, uuid, password)
 
 	// 生成代理组
 	proxyGroups := s.generateProxyGroups(proxiesMap, orderedGroupNames)
@@ -110,7 +110,7 @@ func (s *ClashService) findNodesByPassword(password string) []*model.Inbound {
 }
 
 // 生成 CDN 节点，返回proxiesMap和按inbound ID排序的组名列表
-func (s *ClashService) generateCDNProxies(baseNodes []*model.Inbound, cdnDomain string, count int, prefix string, subPort int) (map[string][]ClashProxy, []string) {
+func (s *ClashService) generateCDNProxies(baseNodes []*model.Inbound, cdnDomain string, count int, prefix string, subPort int, targetUUID string, targetPassword string) (map[string][]ClashProxy, []string) {
 	proxiesMap := make(map[string][]ClashProxy)
 	groupIDMap := make(map[string]int) // 记录每个组名对应的最小inbound ID
 
@@ -130,9 +130,9 @@ func (s *ClashService) generateCDNProxies(baseNodes []*model.Inbound, cdnDomain 
 
 			var proxy ClashProxy
 			if inbound.Protocol == "vmess" {
-				proxy = s.createVMessProxy(inbound, cdnServer, i, prefix, subPort)
+				proxy = s.createVMessProxy(inbound, cdnServer, i, prefix, subPort, targetUUID)
 			} else if inbound.Protocol == "trojan" {
-				proxy = s.createTrojanProxy(inbound, cdnServer, i, prefix, subPort)
+				proxy = s.createTrojanProxy(inbound, cdnServer, i, prefix, subPort, targetPassword)
 			}
 
 			if proxy.Name != "" {
@@ -169,7 +169,7 @@ func (s *ClashService) getWebSocketPath(streamSettingsStr string) string {
 }
 
 // 创建 VMess 代理
-func (s *ClashService) createVMessProxy(inbound *model.Inbound, cdnServer string, index int, prefix string, subPort int) ClashProxy {
+func (s *ClashService) createVMessProxy(inbound *model.Inbound, cdnServer string, index int, prefix string, subPort int, targetUUID string) ClashProxy {
 	var settings map[string]interface{}
 	json.Unmarshal([]byte(inbound.Settings), &settings)
 
@@ -178,8 +178,13 @@ func (s *ClashService) createVMessProxy(inbound *model.Inbound, cdnServer string
 		return ClashProxy{}
 	}
 
-	client, _ := clients[0].(map[string]interface{})
-	uuid, _ := client["id"].(string)
+	var uuid string
+	if targetUUID != "" {
+		uuid = targetUUID
+	} else {
+		client, _ := clients[0].(map[string]interface{})
+		uuid, _ = client["id"].(string)
+	}
 
 	// 使用节点备注作为后缀
 	suffix := ""
@@ -206,7 +211,7 @@ func (s *ClashService) createVMessProxy(inbound *model.Inbound, cdnServer string
 }
 
 // 创建 Trojan 代理
-func (s *ClashService) createTrojanProxy(inbound *model.Inbound, cdnServer string, index int, prefix string, subPort int) ClashProxy {
+func (s *ClashService) createTrojanProxy(inbound *model.Inbound, cdnServer string, index int, prefix string, subPort int, targetPassword string) ClashProxy {
 	var settings map[string]interface{}
 	json.Unmarshal([]byte(inbound.Settings), &settings)
 
@@ -215,8 +220,13 @@ func (s *ClashService) createTrojanProxy(inbound *model.Inbound, cdnServer strin
 		return ClashProxy{}
 	}
 
-	client, _ := clients[0].(map[string]interface{})
-	password, _ := client["password"].(string)
+	var password string
+	if targetPassword != "" {
+		password = targetPassword
+	} else {
+		client, _ := clients[0].(map[string]interface{})
+		password, _ = client["password"].(string)
+	}
 
 	// 使用节点备注作为后缀
 	suffix := ""
