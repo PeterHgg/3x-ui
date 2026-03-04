@@ -3,6 +3,7 @@ package job
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -422,10 +423,17 @@ func (j *CheckClientIpJob) disconnectClientTemporarily(inbound *model.Inbound, c
 		return
 	}
 
+	accountID := inbound.Id
+	if inbound.SyncSourceId > 0 {
+		accountID = inbound.SyncSourceId
+	}
+	prefixedEmail := fmt.Sprintf("%d_%s", accountID, clientEmail)
+	clientConfig["email"] = prefixedEmail
+
 	// Remove user to disconnect all connections
-	err = xrayAPI.RemoveUser(inbound.Tag, clientEmail)
+	err = xrayAPI.RemoveUser(inbound.Tag, prefixedEmail)
 	if err != nil {
-		logger.Warningf("[LIMIT_IP] Failed to remove user %s: %v", clientEmail, err)
+		logger.Warningf("[LIMIT_IP] Failed to remove user %s: %v", prefixedEmail, err)
 		return
 	}
 
@@ -435,7 +443,7 @@ func (j *CheckClientIpJob) disconnectClientTemporarily(inbound *model.Inbound, c
 	// Re-add user to allow new connections
 	err = xrayAPI.AddUser(string(inbound.Protocol), inbound.Tag, clientConfig)
 	if err != nil {
-		logger.Warningf("[LIMIT_IP] Failed to re-add user %s: %v", clientEmail, err)
+		logger.Warningf("[LIMIT_IP] Failed to re-add user %s: %v", prefixedEmail, err)
 	}
 }
 
