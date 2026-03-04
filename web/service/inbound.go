@@ -1028,18 +1028,16 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 			}
 		}
 
-		// Direct match by email (and inbound_id if parsed) and atomic update to prevent race conditions
-		query := tx.Model(&xray.ClientTraffic{}).Where("email = ?", email)
-		if inboundID > 0 {
-			query = query.Where("inbound_id = ?", inboundID)
-		}
-
-		err = query.Updates(map[string]any{
-			"up":          gorm.Expr("up + ?", traffic.Up),
-			"down":        gorm.Expr("down + ?", traffic.Down),
-			"all_time":    gorm.Expr("COALESCE(all_time, 0) + ?", traffic.Up+traffic.Down),
-			"last_online": time.Now().UnixMilli(),
-		}).Error
+		// Direct match by email and atomic update to prevent race conditions.
+		// We update ALL records that share this email and the identified inboundID (master/slave).
+		err = tx.Model(&xray.ClientTraffic{}).
+			Where("email = ? AND (inbound_id = ? OR inbound_id IN (SELECT id FROM inbounds WHERE sync_source_id = ?))", email, inboundID, inboundID).
+			Updates(map[string]any{
+				"up":          gorm.Expr("up + ?", traffic.Up),
+				"down":        gorm.Expr("down + ?", traffic.Down),
+				"all_time":    gorm.Expr("COALESCE(all_time, 0) + ?", traffic.Up+traffic.Down),
+				"last_online": time.Now().UnixMilli(),
+			}).Error
 
 		if err == nil {
 			onlineClients = append(onlineClients, email)
