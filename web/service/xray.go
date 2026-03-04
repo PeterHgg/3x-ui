@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"runtime"
 	"sync"
 
@@ -151,9 +152,13 @@ func (s *XrayService) GetXrayConfig() (*xray.Config, error) {
 						c["flow"] = "xtls-rprx-vision"
 					}
 				}
-				// Use original email for traffic accounting
+				// Use master's ID for traffic accounting if it's a slave node
 				if email, ok := c["email"].(string); ok {
-					c["email"] = email
+					accountID := inbound.Id
+					if inbound.SyncSourceId > 0 {
+						accountID = inbound.SyncSourceId
+					}
+					c["email"] = fmt.Sprintf("%d_%s", accountID, email)
 				}
 				final_clients = append(final_clients, any(c))
 			}

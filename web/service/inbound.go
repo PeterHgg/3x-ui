@@ -1004,17 +1004,30 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 			continue
 		}
 
-		// Direct match by email and atomic update to prevent race conditions
-		err = tx.Model(&xray.ClientTraffic{}).Where("email = ?", traffic.Email).
-			Updates(map[string]any{
-				"up":          gorm.Expr("up + ?", traffic.Up),
-				"down":        gorm.Expr("down + ?", traffic.Down),
-				"all_time":    gorm.Expr("all_time + ?", traffic.Up+traffic.Down),
-				"last_online": time.Now().UnixMilli(),
-			}).Error
+		email := traffic.Email
+		var inboundID int
+		if parts := strings.SplitN(email, "_", 2); len(parts) == 2 {
+			if id, err := strconv.Atoi(parts[0]); err == nil {
+				inboundID = id
+				email = parts[1]
+			}
+		}
+
+		// Direct match by email (and inbound_id if parsed) and atomic update to prevent race conditions
+		query := tx.Model(&xray.ClientTraffic{}).Where("email = ?", email)
+		if inboundID > 0 {
+			query = query.Where("inbound_id = ?", inboundID)
+		}
+
+		err = query.Updates(map[string]any{
+			"up":          gorm.Expr("up + ?", traffic.Up),
+			"down":        gorm.Expr("down + ?", traffic.Down),
+			"all_time":    gorm.Expr("all_time + ?", traffic.Up+traffic.Down),
+			"last_online": time.Now().UnixMilli(),
+		}).Error
 
 		if err == nil {
-			onlineClients = append(onlineClients, traffic.Email)
+			onlineClients = append(onlineClients, email)
 		} else {
 			logger.Warningf("Failed to update traffic for email %s: %v", traffic.Email, err)
 		}
@@ -1240,7 +1253,7 @@ func (s *InboundService) disableInvalidClients(tx *gorm.DB) (bool, int64, error)
 
 		err := tx.Table("inbounds").
 			Select("inbounds.tag, client_traffics.email, inbounds.id as inbound_id, inbounds.sync_source_id").
-			Joins("JOIN client_traffics ON inbounds.id = client_traffics.inbound_id").
+			Joins("JOIN client_traffics ON (inbounds.id = client_traffics.inbound_id OR (inbounds.sync_source_id > 0 AND inbounds.sync_source_id = client_traffics.inbound_id))").
 			Where("((client_traffics.total > 0 AND client_traffics.up + client_traffics.down >= client_traffics.total) OR (client_traffics.expiry_time > 0 AND client_traffics.expiry_time <= ?)) AND client_traffics.enable = ?", now, true).
 			Scan(&results).Error
 		if err != nil {
@@ -1248,7 +1261,11 @@ func (s *InboundService) disableInvalidClients(tx *gorm.DB) (bool, int64, error)
 		}
 		s.xrayApi.Init(p.GetAPIPort())
 		for _, result := range results {
-			err1 := s.xrayApi.RemoveUser(result.Tag, result.Email)
+			email := result.Email
+			if result.SyncSourceId > 0 {
+				email = fmt.Sprintf("%d_%s", result.SyncSourceId, email)
+			}
+			err1 := s.xrayApi.RemoveUser(result.Tag, email)
 			if err1 == nil {
 				logger.Debug("Client disabled by api:", result.Email)
 			} else {
