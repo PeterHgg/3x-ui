@@ -1061,6 +1061,7 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 		// Direct match by email and atomic update to prevent race conditions.
 		// We update ALL records that share this email and the identified inboundID (master/slave).
 		// We also sync the master's quota settings to slaves for consistency.
+		nowMs := time.Now().UnixMilli()
 		err = tx.Model(&xray.ClientTraffic{}).
 			Where("email = ? AND (inbound_id = ? OR inbound_id IN (SELECT id FROM inbounds WHERE sync_source_id = ?))", email, inboundID, inboundID).
 			Updates(map[string]any{
@@ -1070,13 +1071,17 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 				"total":       tx.Table("client_traffics").Select("total").Where("email = ? AND inbound_id = ?", email, inboundID),
 				"expiry_time": tx.Table("client_traffics").Select("expiry_time").Where("email = ? AND inbound_id = ?", email, inboundID),
 				"enable":      tx.Table("client_traffics").Select("enable").Where("email = ? AND inbound_id = ?", email, inboundID),
-				"last_online": time.Now().UnixMilli(),
+				"last_online": nowMs,
 			}).Error
 
 		if err == nil {
 			onlineClients = append(onlineClients, email)
 			// Also add the full prefixed email to ensure both master and slave can show online status if needed
 			onlineClients = append(onlineClients, fullEmail)
+			// Ensure the master record also has the latest online status if it wasn't already updated (in case traffic came from slave)
+			tx.Model(&xray.ClientTraffic{}).
+				Where("email = ? AND inbound_id = ?", email, inboundID).
+				Update("last_online", nowMs)
 		} else {
 			logger.Warningf("Failed to update traffic for email %s: %v", fullEmail, err)
 		}
@@ -1410,6 +1415,7 @@ func (s *InboundService) enrichInbounds(inbounds []*model.Inbound) {
 					inbound.ClientStats[i].Total = masterStat.Total
 					inbound.ClientStats[i].ExpiryTime = masterStat.ExpiryTime
 					inbound.ClientStats[i].Enable = masterStat.Enable
+					inbound.ClientStats[i].LastOnline = masterStat.LastOnline
 				} else {
 					// Master Stat not in current inbounds list, fetch from DB
 					var ms xray.ClientTraffic
@@ -1423,6 +1429,7 @@ func (s *InboundService) enrichInbounds(inbounds []*model.Inbound) {
 						inbound.ClientStats[i].Total = ms.Total
 						inbound.ClientStats[i].ExpiryTime = ms.ExpiryTime
 						inbound.ClientStats[i].Enable = ms.Enable
+						inbound.ClientStats[i].LastOnline = ms.LastOnline
 					}
 				}
 			}
