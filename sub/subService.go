@@ -76,7 +76,7 @@ func (s *SubService) GetSubs(subId string, host string) ([]string, int64, xray.C
 		}
 		for _, client := range clients {
 			if client.Enable && client.SubID == subId {
-				link := s.getLink(inbound, client.Email)
+				link := s.getLink(inbound, client)
 				result = append(result, link)
 				ct := s.getClientTraffics(inbound.ClientStats, client.Email)
 				clientTraffics = append(clientTraffics, ct)
@@ -161,16 +161,16 @@ func (s *SubService) getFallbackMaster(dest string, streamSettings string) (stri
 	return inbound.Listen, inbound.Port, string(modifiedStream), nil
 }
 
-func (s *SubService) getLink(inbound *model.Inbound, email string) string {
+func (s *SubService) getLink(inbound *model.Inbound, client *model.Client) string {
 	switch inbound.Protocol {
 	case "vmess":
-		return s.genVmessLink(inbound, email)
+		return s.genVmessLink(inbound, client)
 	case "vless":
-		return s.genVlessLink(inbound, email)
+		return s.genVlessLink(inbound, client)
 	case "trojan":
-		return s.genTrojanLink(inbound, email)
+		return s.genTrojanLink(inbound, client)
 	case "shadowsocks":
-		return s.genShadowsocksLink(inbound, email)
+		return s.genShadowsocksLink(inbound, client)
 	}
 	return ""
 }
@@ -243,7 +243,7 @@ func shouldSkipParamForNoneTLS(paramName string, forceTls string) bool {
 	return tlsOnlyParams[paramName]
 }
 
-func (s *SubService) genVmessLink(inbound *model.Inbound, email string) string {
+func (s *SubService) genVmessLink(inbound *model.Inbound, client *model.Client) string {
 	if inbound.Protocol != model.VMESS {
 		return ""
 	}
@@ -344,16 +344,8 @@ func (s *SubService) genVmessLink(inbound *model.Inbound, email string) string {
 		}
 	}
 
-	clients, _ := s.inboundService.GetClients(inbound)
-	clientIndex := -1
-	for i, client := range clients {
-		if client.Email == email {
-			clientIndex = i
-			break
-		}
-	}
-	obj["id"] = clients[clientIndex].ID
-	obj["scy"] = clients[clientIndex].Security
+	obj["id"] = client.ID
+	obj["scy"] = client.Security
 
 	// Handle external proxies using helper function
 	externalProxies, err := getExternalProxies(inbound.StreamSettings)
@@ -377,7 +369,7 @@ func (s *SubService) genVmessLink(inbound *model.Inbound, email string) string {
 
 			// Set external proxy specific values (already validated by helper)
 			remark, _ := ep["remark"].(string)
-			newObj["ps"] = s.genRemark(inbound, email, remark)
+			newObj["ps"] = s.genRemark(inbound, client.Email, remark)
 			newObj["add"], _ = ep["dest"].(string)
 			port, _ := ep["port"].(float64)
 			newObj["port"] = int(port)
@@ -396,13 +388,13 @@ func (s *SubService) genVmessLink(inbound *model.Inbound, email string) string {
 		return links
 	}
 
-	obj["ps"] = s.genRemark(inbound, email, "")
+	obj["ps"] = s.genRemark(inbound, client.Email, "")
 
 	jsonStr, _ := json.MarshalIndent(obj, "", "  ")
 	return "vmess://" + base64.StdEncoding.EncodeToString(jsonStr)
 }
 
-func (s *SubService) genVlessLink(inbound *model.Inbound, email string) string {
+func (s *SubService) genVlessLink(inbound *model.Inbound, client *model.Client) string {
 	var address string
 	if inbound.Listen == "" || inbound.Listen == "0.0.0.0" || inbound.Listen == "::" || inbound.Listen == "::0" {
 		address = s.address
@@ -415,15 +407,7 @@ func (s *SubService) genVlessLink(inbound *model.Inbound, email string) string {
 	}
 	var stream map[string]any
 	json.Unmarshal([]byte(inbound.StreamSettings), &stream)
-	clients, _ := s.inboundService.GetClients(inbound)
-	clientIndex := -1
-	for i, client := range clients {
-		if client.Email == email {
-			clientIndex = i
-			break
-		}
-	}
-	uuid := clients[clientIndex].ID
+	uuid := client.ID
 	port := inbound.Port
 	streamNetwork := stream["network"].(string)
 	params := make(map[string]string)
@@ -518,8 +502,8 @@ func (s *SubService) genVlessLink(inbound *model.Inbound, email string) string {
 			}
 		}
 
-		if streamNetwork == "tcp" && len(clients[clientIndex].Flow) > 0 {
-			params["flow"] = clients[clientIndex].Flow
+		if streamNetwork == "tcp" && len(client.Flow) > 0 {
+			params["flow"] = client.Flow
 		}
 	}
 
@@ -552,8 +536,8 @@ func (s *SubService) genVlessLink(inbound *model.Inbound, email string) string {
 			params["spx"] = "/" + random.Seq(15)
 		}
 
-		if streamNetwork == "tcp" && len(clients[clientIndex].Flow) > 0 {
-			params["flow"] = clients[clientIndex].Flow
+		if streamNetwork == "tcp" && len(client.Flow) > 0 {
+			params["flow"] = client.Flow
 		}
 	}
 
@@ -597,7 +581,7 @@ func (s *SubService) genVlessLink(inbound *model.Inbound, email string) string {
 
 			// Set the new query values on the URL
 			url.RawQuery = q.Encode()
-			url.Fragment = s.genRemark(inbound, email, remark)
+			url.Fragment = s.genRemark(inbound, client.Email, remark)
 
 			links = append(links, url.String())
 		}
@@ -615,11 +599,11 @@ func (s *SubService) genVlessLink(inbound *model.Inbound, email string) string {
 	// Set the new query values on the URL
 	url.RawQuery = q.Encode()
 
-	url.Fragment = s.genRemark(inbound, email, "")
+	url.Fragment = s.genRemark(inbound, client.Email, "")
 	return url.String()
 }
 
-func (s *SubService) genTrojanLink(inbound *model.Inbound, email string) string {
+func (s *SubService) genTrojanLink(inbound *model.Inbound, client *model.Client) string {
 	var address string
 	if inbound.Listen == "" || inbound.Listen == "0.0.0.0" || inbound.Listen == "::" || inbound.Listen == "::0" {
 		address = s.address
@@ -631,15 +615,7 @@ func (s *SubService) genTrojanLink(inbound *model.Inbound, email string) string 
 	}
 	var stream map[string]any
 	json.Unmarshal([]byte(inbound.StreamSettings), &stream)
-	clients, _ := s.inboundService.GetClients(inbound)
-	clientIndex := -1
-	for i, client := range clients {
-		if client.Email == email {
-			clientIndex = i
-			break
-		}
-	}
-	password := clients[clientIndex].Password
+	password := client.Password
 	port := inbound.Port
 	streamNetwork := stream["network"].(string)
 	params := make(map[string]string)
@@ -757,8 +733,8 @@ func (s *SubService) genTrojanLink(inbound *model.Inbound, email string) string 
 			params["spx"] = "/" + random.Seq(15)
 		}
 
-		if streamNetwork == "tcp" && len(clients[clientIndex].Flow) > 0 {
-			params["flow"] = clients[clientIndex].Flow
+		if streamNetwork == "tcp" && len(client.Flow) > 0 {
+			params["flow"] = client.Flow
 		}
 	}
 
@@ -802,7 +778,7 @@ func (s *SubService) genTrojanLink(inbound *model.Inbound, email string) string 
 
 			// Set the new query values on the URL
 			url.RawQuery = q.Encode()
-			url.Fragment = s.genRemark(inbound, email, remark)
+			url.Fragment = s.genRemark(inbound, client.Email, remark)
 
 			if index > 0 {
 				links += "\n"
@@ -824,11 +800,11 @@ func (s *SubService) genTrojanLink(inbound *model.Inbound, email string) string 
 	// Set the new query values on the URL
 	url.RawQuery = q.Encode()
 
-	url.Fragment = s.genRemark(inbound, email, "")
+	url.Fragment = s.genRemark(inbound, client.Email, "")
 	return url.String()
 }
 
-func (s *SubService) genShadowsocksLink(inbound *model.Inbound, email string) string {
+func (s *SubService) genShadowsocksLink(inbound *model.Inbound, client *model.Client) string {
 	var address string
 	if inbound.Listen == "" || inbound.Listen == "0.0.0.0" || inbound.Listen == "::" || inbound.Listen == "::0" {
 		address = s.address
@@ -840,19 +816,10 @@ func (s *SubService) genShadowsocksLink(inbound *model.Inbound, email string) st
 	}
 	var stream map[string]any
 	json.Unmarshal([]byte(inbound.StreamSettings), &stream)
-	clients, _ := s.inboundService.GetClients(inbound)
-
 	var settings map[string]any
 	json.Unmarshal([]byte(inbound.Settings), &settings)
 	inboundPassword := settings["password"].(string)
 	method := settings["method"].(string)
-	clientIndex := -1
-	for i, client := range clients {
-		if client.Email == email {
-			clientIndex = i
-			break
-		}
-	}
 	streamNetwork := stream["network"].(string)
 	params := make(map[string]string)
 	params["type"] = streamNetwork
@@ -941,9 +908,9 @@ func (s *SubService) genShadowsocksLink(inbound *model.Inbound, email string) st
 		}
 	}
 
-	encPart := fmt.Sprintf("%s:%s", method, clients[clientIndex].Password)
+	encPart := fmt.Sprintf("%s:%s", method, client.Password)
 	if method[0] == '2' {
-		encPart = fmt.Sprintf("%s:%s:%s", method, inboundPassword, clients[clientIndex].Password)
+		encPart = fmt.Sprintf("%s:%s:%s", method, inboundPassword, client.Password)
 	}
 
 	// Handle external proxies using helper function
@@ -982,7 +949,7 @@ func (s *SubService) genShadowsocksLink(inbound *model.Inbound, email string) st
 
 			// Set the new query values on the URL
 			url.RawQuery = q.Encode()
-			url.Fragment = s.genRemark(inbound, email, remark)
+			url.Fragment = s.genRemark(inbound, client.Email, remark)
 
 			if index > 0 {
 				links += "\n"
@@ -1003,7 +970,7 @@ func (s *SubService) genShadowsocksLink(inbound *model.Inbound, email string) st
 	// Set the new query values on the URL
 	url.RawQuery = q.Encode()
 
-	url.Fragment = s.genRemark(inbound, email, "")
+	url.Fragment = s.genRemark(inbound, client.Email, "")
 	return url.String()
 }
 
