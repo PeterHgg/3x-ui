@@ -1058,29 +1058,38 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 			continue
 		}
 
+		logger.Debugf("Processing traffic for fullEmail: '%s', extracted inboundID: %d, base email: '%s', up: %d, down: %d", fullEmail, inboundID, email, traffic.Up, traffic.Down)
+
+		if email == "" {
+			logger.Debugf("Skipping traffic update for empty email (fullEmail: '%s')", fullEmail)
+			continue
+		}
+
 		// Direct match by email and atomic update to prevent race conditions.
 		// We update ALL records that share this email and the identified inboundID (master/slave).
 		// We also sync the master's quota settings to slaves for consistency.
 		nowMs := time.Now().UnixMilli()
-		err = tx.Model(&xray.ClientTraffic{}).
-			Where("email = ? AND (inbound_id = ? OR inbound_id IN (SELECT id FROM inbounds WHERE sync_source_id = ?))", email, inboundID, inboundID).
+		res := tx.Model(&xray.ClientTraffic{}).
+			Where("(email = ? OR email = ?) AND (inbound_id = ? OR inbound_id IN (SELECT id FROM inbounds WHERE sync_source_id = ?))", email, fullEmail, inboundID, inboundID).
 			Updates(map[string]any{
 				"up":          gorm.Expr("up + ?", traffic.Up),
 				"down":        gorm.Expr("down + ?", traffic.Down),
 				"all_time":    gorm.Expr("COALESCE(all_time, 0) + ?", traffic.Up+traffic.Down),
-				"total":       tx.Table("client_traffics").Select("total").Where("email = ? AND inbound_id = ?", email, inboundID),
-				"expiry_time": tx.Table("client_traffics").Select("expiry_time").Where("email = ? AND inbound_id = ?", email, inboundID),
-				"enable":      tx.Table("client_traffics").Select("enable").Where("email = ? AND inbound_id = ?", email, inboundID),
+				"total":       tx.Table("client_traffics").Select("total").Where("(email = ? OR email = ?) AND inbound_id = ?", email, fullEmail, inboundID).Limit(1),
+				"expiry_time": tx.Table("client_traffics").Select("expiry_time").Where("(email = ? OR email = ?) AND inbound_id = ?", email, fullEmail, inboundID).Limit(1),
+				"enable":      tx.Table("client_traffics").Select("enable").Where("(email = ? OR email = ?) AND inbound_id = ?", email, fullEmail, inboundID).Limit(1),
 				"last_online": nowMs,
-			}).Error
+			})
+		err = res.Error
 
 		if err == nil {
+			logger.Debugf("Traffic updated for email: '%s', rows affected: %d", email, res.RowsAffected)
 			onlineClients = append(onlineClients, email)
 			// Also add the full prefixed email to ensure both master and slave can show online status if needed
 			onlineClients = append(onlineClients, fullEmail)
 			// Ensure the master record also has the latest online status if it wasn't already updated (in case traffic came from slave)
 			tx.Model(&xray.ClientTraffic{}).
-				Where("email = ? AND inbound_id = ?", email, inboundID).
+				Where("(email = ? OR email = ?) AND inbound_id = ?", email, fullEmail, inboundID).
 				Update("last_online", nowMs)
 		} else {
 			logger.Warningf("Failed to update traffic for email %s: %v", fullEmail, err)
@@ -1392,6 +1401,8 @@ func (s *InboundService) enrichInbounds(inbounds []*model.Inbound) {
 			}
 			key := fmt.Sprintf("%d_%s", inbound.Id, email)
 			statsMap[key] = &inbound.ClientStats[i]
+			// Also map by prefixed email to ensure lookup works for slave nodes using prefixed IDs
+			statsMap[fmt.Sprintf("%d_%s", inbound.Id, inbound.ClientStats[i].Email)] = &inbound.ClientStats[i]
 		}
 	}
 
