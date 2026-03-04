@@ -1058,12 +1058,16 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 				// We need to map it to the local InboundId.
 				var targetInboundId int
 				var inbound model.Inbound
+
 				// Try direct match first (Master/Standalone node)
 				err = tx.Model(&model.Inbound{}).Where("id = ?", prefixId).First(&inbound).Error
 				if err == nil {
 					targetInboundId = inbound.Id
 				} else {
 					// Try to find slave inbound mapping to this Master ID
+					// First, verify if prefixId is actually a valid Inbound ID in our system
+					// If so, it might be a direct traffic from master
+					// If not, check sync_source_id
 					err = tx.Model(&model.Inbound{}).Where("sync_source_id = ?", prefixId).First(&inbound).Error
 					if err == nil {
 						targetInboundId = inbound.Id
@@ -1071,6 +1075,7 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 				}
 
 				if targetInboundId > 0 {
+					// Try to find by inbound_id and email first
 					err = tx.Model(&xray.ClientTraffic{}).
 						Where("inbound_id = ? AND email = ?", targetInboundId, email).
 						First(&dbTraffic).Error
@@ -1088,42 +1093,63 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 			}
 		}
 
-		// 2. Fallback: Legacy format (email only, no prefix)
-		//    This handles old clients or cases where Xray doesn't report with prefix.
-		var legacyTraffic xray.ClientTraffic
-		errLegacy := tx.Model(&xray.ClientTraffic{}).
-			Where("email = ?", traffic.Email).
-			First(&legacyTraffic).Error
+		// 2. Fallback: Legacy format or Failed prefix lookup
+		//    This handles old clients, or cases where Xray doesn't report with prefix,
+		//    or if the prefix lookup failed above.
+		//    CRITICAL FIX: We must search by email across ALL ClientTraffic records if specific inbound lookup failed.
+		//    However, to avoid ambiguity if multiple inbounds have same email, we should prioritize.
+		//    But in 3x-ui, email is usually unique per inbound but maybe not globally?
+		//    Actually, email is often unique. Let's try to find by email.
 
-		if errLegacy == nil {
-			legacyTraffic.Up += traffic.Up
-			legacyTraffic.Down += traffic.Down
-			legacyTraffic.AllTime += (traffic.Up + traffic.Down)
-			legacyTraffic.LastOnline = time.Now().UnixMilli()
-			onlineClients = append(onlineClients, traffic.Email)
-			tx.Save(&legacyTraffic)
-			continue // Successfully updated, move to next traffic
-		}
-
-		// 3. Fallback: Prefixed email but DB is raw email
-		//    This handles cases where the traffic report has a prefix but the DB doesn't.
+		// If we had a prefix but couldn't find it, we might still want to try just the email part
+		searchEmail := traffic.Email
 		if len(parts) == 2 {
-			email := parts[1]
-			var dbTraffic xray.ClientTraffic
-			errRaw := tx.Model(&xray.ClientTraffic{}).
-				Where("email = ?", email).
-				First(&dbTraffic).Error
-
-			if errRaw == nil {
-				dbTraffic.Up += traffic.Up
-				dbTraffic.Down += traffic.Down
-				dbTraffic.AllTime += (traffic.Up + traffic.Down)
-				dbTraffic.LastOnline = time.Now().UnixMilli()
-				onlineClients = append(onlineClients, email)
-				tx.Save(&dbTraffic)
-				continue
-			}
+			searchEmail = parts[1]
 		}
+
+		var legacyTraffics []xray.ClientTraffic
+		errLegacy := tx.Model(&xray.ClientTraffic{}).
+			Where("email = ?", searchEmail).
+			Find(&legacyTraffics).Error
+
+		if errLegacy == nil && len(legacyTraffics) > 0 {
+			// If we found matches, update them.
+			// Ideally we should only update one, but if there are duplicates (which shouldn't happen ideally),
+			// updating all might be safer than updating none, OR we update the first one.
+			// Let's update the first one found as a fallback.
+
+			// If multiple found, we might want to prioritize the one that matches the prefix if possible?
+			// But here we are in fallback.
+
+			targetTraffic := &legacyTraffics[0]
+
+			targetTraffic.Up += traffic.Up
+			targetTraffic.Down += traffic.Down
+			targetTraffic.AllTime += (traffic.Up + traffic.Down)
+			targetTraffic.LastOnline = time.Now().UnixMilli()
+			onlineClients = append(onlineClients, searchEmail)
+			tx.Save(targetTraffic)
+			continue // Successfully updated
+		}
+
+		// 3. Fallback: Try with the FULL email string (in case the prefix was actually part of the email)
+		if searchEmail != traffic.Email {
+             var fullEmailTraffics []xray.ClientTraffic
+             errFull := tx.Model(&xray.ClientTraffic{}).
+                 Where("email = ?", traffic.Email).
+                 Find(&fullEmailTraffics).Error
+
+             if errFull == nil && len(fullEmailTraffics) > 0 {
+                 targetTraffic := &fullEmailTraffics[0]
+                 targetTraffic.Up += traffic.Up
+                 targetTraffic.Down += traffic.Down
+                 targetTraffic.AllTime += (traffic.Up + traffic.Down)
+                 targetTraffic.LastOnline = time.Now().UnixMilli()
+                 onlineClients = append(onlineClients, traffic.Email)
+                 tx.Save(targetTraffic)
+                 continue
+             }
+        }
 
 		// 4. If still not found, log a warning for debugging
 		logger.Warningf("Traffic report for unknown email: %s (Up: %d, Down: %d)", traffic.Email, traffic.Up, traffic.Down)
