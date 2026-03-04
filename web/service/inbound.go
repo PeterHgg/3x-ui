@@ -1014,18 +1014,48 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 
 	onlineClients := make([]string, 0)
 
+	// Build a map to aggregate traffic for the same email across multiple inbounds
+	// This handles the case where Xray reports the same user's traffic with different prefixed emails
+	aggregatedTraffic := make(map[string]*xray.ClientTraffic)
+
 	for _, traffic := range traffics {
 		if traffic.Up+traffic.Down == 0 {
 			continue
 		}
 
-		email := traffic.Email
+		// Aggregate traffic by the FULL prefixed email (including ID prefix)
+		// This is critical for correctly tracking traffic per user per inbound
+		fullEmail := traffic.Email
+
+		if existing, ok := aggregatedTraffic[fullEmail]; ok {
+			existing.Up += traffic.Up
+			existing.Down += traffic.Down
+		} else {
+			aggregatedTraffic[fullEmail] = &xray.ClientTraffic{
+				Email: fullEmail,
+				Up:    traffic.Up,
+				Down:  traffic.Down,
+			}
+		}
+	}
+
+	// Now process each aggregated traffic record
+	for fullEmail, traffic := range aggregatedTraffic {
+		// Extract the Master ID from the prefixed email
 		var inboundID int
-		if parts := strings.SplitN(email, "_", 2); len(parts) == 2 {
-			if id, err := strconv.Atoi(parts[0]); err == nil {
+		email := fullEmail
+		if parts := strings.SplitN(fullEmail, "_", 2); len(parts) == 2 {
+			if id, err := strconv.Atoi(parts[0]); err == nil && id > 0 {
 				inboundID = id
 				email = parts[1]
 			}
+		}
+
+		// If we couldn't extract a valid inbound ID, skip this traffic
+		// This prevents updating wrong users when email doesn't have a valid ID prefix
+		if inboundID <= 0 {
+			logger.Debugf("Skipping traffic update for email %s: no valid inbound ID in prefix", fullEmail)
+			continue
 		}
 
 		// Direct match by email and atomic update to prevent race conditions.
@@ -1042,7 +1072,7 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 		if err == nil {
 			onlineClients = append(onlineClients, email)
 		} else {
-			logger.Warningf("Failed to update traffic for email %s: %v", traffic.Email, err)
+			logger.Warningf("Failed to update traffic for email %s: %v", fullEmail, err)
 		}
 	}
 
