@@ -268,26 +268,6 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 		s.xrayApi.Init(p.GetAPIPort())
 		inboundConfig := inbound.GenXrayInboundConfig()
 
-		// Inject unique prefixes for traffic accounting via API as well
-		var settings map[string]any
-		json.Unmarshal(inboundConfig.Settings, &settings)
-		if clients, ok := settings["clients"].([]any); ok {
-			accountID := inbound.Id
-			if inbound.SyncSourceId > 0 {
-				accountID = inbound.SyncSourceId
-			}
-			for i, client := range clients {
-				if c, ok := client.(map[string]any); ok {
-					if email, ok := c["email"].(string); ok {
-						c["email"] = fmt.Sprintf("%d_%s", accountID, email)
-						clients[i] = c
-					}
-				}
-			}
-			settings["clients"] = clients
-			inboundConfig.Settings, _ = json.Marshal(settings)
-		}
-
 		inboundJson, err1 := json.MarshalIndent(inboundConfig, "", "  ")
 		if err1 != nil {
 			logger.Debug("Unable to marshal inbound config:", err1)
@@ -640,13 +620,8 @@ func (s *InboundService) AddInboundClient(data *model.Inbound) (bool, error) {
 					cipher = oldSettings["method"].(string)
 				}
 
-				accountID := oldInbound.Id
-				if oldInbound.SyncSourceId > 0 {
-					accountID = oldInbound.SyncSourceId
-				}
-
 				err1 := s.xrayApi.AddUser(string(oldInbound.Protocol), oldInbound.Tag, map[string]any{
-					"email":    fmt.Sprintf("%d_%s", accountID, client.Email),
+					"email":    client.Email,
 					"id":       client.ID,
 					"security": client.Security,
 					"flow":     client.Flow,
@@ -743,18 +718,12 @@ func (s *InboundService) DelInboundClient(inboundId int, clientId string) (bool,
 		if needApiDel && notDepleted {
 			s.xrayApi.Init(p.GetAPIPort())
 
-			accountID := oldInbound.Id
-			if oldInbound.SyncSourceId > 0 {
-				accountID = oldInbound.SyncSourceId
-			}
-			prefixedEmail := fmt.Sprintf("%d_%s", accountID, email)
-
-			err1 := s.xrayApi.RemoveUser(oldInbound.Tag, prefixedEmail)
+			err1 := s.xrayApi.RemoveUser(oldInbound.Tag, email)
 			if err1 == nil {
-				logger.Debug("Client deleted by api:", prefixedEmail)
+				logger.Debug("Client deleted by api:", email)
 				needRestart = false
 			} else {
-				if strings.Contains(err1.Error(), fmt.Sprintf("User %s not found.", prefixedEmail)) {
+				if strings.Contains(err1.Error(), fmt.Sprintf("User %s not found.", email)) {
 					logger.Debug("User is already deleted. Nothing to do more...")
 				} else {
 					logger.Debug("Error in deleting client by api:", err1)
@@ -906,18 +875,12 @@ func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId strin
 	if len(oldEmail) > 0 {
 		s.xrayApi.Init(p.GetAPIPort())
 
-		accountID := oldInbound.Id
-		if oldInbound.SyncSourceId > 0 {
-			accountID = oldInbound.SyncSourceId
-		}
-		prefixedOldEmail := fmt.Sprintf("%d_%s", accountID, oldEmail)
-
 		if oldClients[clientIndex].Enable {
-			err1 := s.xrayApi.RemoveUser(oldInbound.Tag, prefixedOldEmail)
+			err1 := s.xrayApi.RemoveUser(oldInbound.Tag, oldEmail)
 			if err1 == nil {
-				logger.Debug("Old client deleted by api:", prefixedOldEmail)
+				logger.Debug("Old client deleted by api:", oldEmail)
 			} else {
-				if strings.Contains(err1.Error(), fmt.Sprintf("User %s not found.", prefixedOldEmail)) {
+				if strings.Contains(err1.Error(), fmt.Sprintf("User %s not found.", oldEmail)) {
 					logger.Debug("User is already deleted. Nothing to do more...")
 				} else {
 					logger.Debug("Error in deleting client by api:", err1)
@@ -931,13 +894,8 @@ func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId strin
 				cipher = oldSettings["method"].(string)
 			}
 
-			accountID := oldInbound.Id
-			if oldInbound.SyncSourceId > 0 {
-				accountID = oldInbound.SyncSourceId
-			}
-
 			err1 := s.xrayApi.AddUser(string(oldInbound.Protocol), oldInbound.Tag, map[string]any{
-				"email":    fmt.Sprintf("%d_%s", accountID, clients[0].Email),
+				"email":    clients[0].Email,
 				"id":       clients[0].ID,
 				"security": clients[0].Security,
 				"flow":     clients[0].Flow,
@@ -1046,112 +1004,20 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 			continue
 		}
 
-		// 1. Try new format: InboundId_Email
-		parts := strings.SplitN(traffic.Email, "_", 2)
-		if len(parts) == 2 {
-			prefixId, err := strconv.Atoi(parts[0])
-			if err == nil {
-				email := parts[1]
-				var dbTraffic xray.ClientTraffic
+		// Direct match by email and atomic update to prevent race conditions
+		err = tx.Model(&xray.ClientTraffic{}).Where("email = ?", traffic.Email).
+			Updates(map[string]any{
+				"up":          gorm.Expr("up + ?", traffic.Up),
+				"down":        gorm.Expr("down + ?", traffic.Down),
+				"all_time":    gorm.Expr("all_time + ?", traffic.Up+traffic.Down),
+				"last_online": time.Now().UnixMilli(),
+			}).Error
 
-				// On slave nodes, the prefixId is the Master ID (SyncSourceId).
-				// We need to map it to the local InboundId.
-				var targetInboundId int
-				var inbound model.Inbound
-
-				// Try direct match first (Master/Standalone node)
-				err = tx.Model(&model.Inbound{}).Where("id = ?", prefixId).First(&inbound).Error
-				if err == nil {
-					targetInboundId = inbound.Id
-				} else {
-					// Try to find slave inbound mapping to this Master ID
-					// First, verify if prefixId is actually a valid Inbound ID in our system
-					// If so, it might be a direct traffic from master
-					// If not, check sync_source_id
-					err = tx.Model(&model.Inbound{}).Where("sync_source_id = ?", prefixId).First(&inbound).Error
-					if err == nil {
-						targetInboundId = inbound.Id
-					}
-				}
-
-				if targetInboundId > 0 {
-					// Try to find by inbound_id and email first
-					err = tx.Model(&xray.ClientTraffic{}).
-						Where("inbound_id = ? AND email = ?", targetInboundId, email).
-						First(&dbTraffic).Error
-
-					if err == nil {
-						// Atomic update to prevent race conditions and traffic loss
-						err = tx.Model(&xray.ClientTraffic{}).Where("id = ?", dbTraffic.Id).
-							Updates(map[string]any{
-								"up":          gorm.Expr("up + ?", traffic.Up),
-								"down":        gorm.Expr("down + ?", traffic.Down),
-								"all_time":    gorm.Expr("all_time + ?", traffic.Up+traffic.Down),
-								"last_online": time.Now().UnixMilli(),
-							}).Error
-
-						if err == nil {
-							onlineClients = append(onlineClients, email)
-							continue // Successfully updated
-						}
-					}
-				}
-			}
+		if err == nil {
+			onlineClients = append(onlineClients, traffic.Email)
+		} else {
+			logger.Warningf("Failed to update traffic for email %s: %v", traffic.Email, err)
 		}
-
-		// 2. Fallback: Legacy format or Failed prefix lookup
-		searchEmail := traffic.Email
-		if len(parts) == 2 {
-			searchEmail = parts[1]
-		}
-
-		var legacyTraffics []xray.ClientTraffic
-		errLegacy := tx.Model(&xray.ClientTraffic{}).
-			Where("email = ?", searchEmail).
-			Find(&legacyTraffics).Error
-
-		if errLegacy == nil && len(legacyTraffics) > 0 {
-			// Update all records with this email to ensure total sync,
-			// or just the first one if preferred. For merging, updating all is safer.
-			err = tx.Model(&xray.ClientTraffic{}).Where("email = ?", searchEmail).
-				Updates(map[string]any{
-					"up":          gorm.Expr("up + ?", traffic.Up),
-					"down":        gorm.Expr("down + ?", traffic.Down),
-					"all_time":    gorm.Expr("all_time + ?", traffic.Up+traffic.Down),
-					"last_online": time.Now().UnixMilli(),
-				}).Error
-
-			if err == nil {
-				onlineClients = append(onlineClients, searchEmail)
-				continue
-			}
-		}
-
-		// 3. Fallback: Try with the FULL email string
-		if searchEmail != traffic.Email {
-			var fullEmailTraffics []xray.ClientTraffic
-			errFull := tx.Model(&xray.ClientTraffic{}).
-				Where("email = ?", traffic.Email).
-				Find(&fullEmailTraffics).Error
-
-			if errFull == nil && len(fullEmailTraffics) > 0 {
-				err = tx.Model(&xray.ClientTraffic{}).Where("email = ?", traffic.Email).
-					Updates(map[string]any{
-						"up":          gorm.Expr("up + ?", traffic.Up),
-						"down":        gorm.Expr("down + ?", traffic.Down),
-						"all_time":    gorm.Expr("all_time + ?", traffic.Up+traffic.Down),
-						"last_online": time.Now().UnixMilli(),
-					}).Error
-
-				if err == nil {
-					onlineClients = append(onlineClients, traffic.Email)
-					continue
-				}
-			}
-		}
-
-		// 4. If still not found, log a warning for debugging
-		logger.Warningf("Traffic report for unknown email: %s (Up: %d, Down: %d)", traffic.Email, traffic.Up, traffic.Down)
 	}
 
 	// Set onlineUsers (unique emails)
@@ -1163,7 +1029,9 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 	for k := range uniqueOnline {
 		finalOnline = append(finalOnline, k)
 	}
-	p.SetOnlineClients(finalOnline)
+	if p != nil {
+		p.SetOnlineClients(finalOnline)
+	}
 
 	return nil
 }
@@ -1262,11 +1130,6 @@ func (s *InboundService) autoRenewClients(tx *gorm.DB) (bool, int64, error) {
 		json.Unmarshal([]byte(inbounds[inbound_index].Settings), &settings)
 		clients := settings["clients"].([]any)
 
-		accountID := inbounds[inbound_index].Id
-		if inbounds[inbound_index].SyncSourceId > 0 {
-			accountID = inbounds[inbound_index].SyncSourceId
-		}
-
 		for client_index := range clients {
 			c := clients[client_index].(map[string]any)
 			for traffic_index, traffic := range traffics {
@@ -1282,13 +1145,6 @@ func (s *InboundService) autoRenewClients(tx *gorm.DB) (bool, int64, error) {
 					if !traffic.Enable {
 						traffics[traffic_index].Enable = true
 
-						// Use prefixed email for Xray API
-						clientCopy := make(map[string]any)
-						for k, v := range c {
-							clientCopy[k] = v
-						}
-						clientCopy["email"] = fmt.Sprintf("%d_%s", accountID, c["email"].(string))
-
 						clientsToAdd = append(clientsToAdd,
 							struct {
 								protocol string
@@ -1297,7 +1153,7 @@ func (s *InboundService) autoRenewClients(tx *gorm.DB) (bool, int64, error) {
 							}{
 								protocol: string(inbounds[inbound_index].Protocol),
 								tag:      inbounds[inbound_index].Tag,
-								client:   clientCopy,
+								client:   c,
 							})
 					}
 					clients[client_index] = any(c)
@@ -1392,17 +1248,11 @@ func (s *InboundService) disableInvalidClients(tx *gorm.DB) (bool, int64, error)
 		}
 		s.xrayApi.Init(p.GetAPIPort())
 		for _, result := range results {
-			accountID := result.InboundId
-			if result.SyncSourceId > 0 {
-				accountID = result.SyncSourceId
-			}
-			prefixedEmail := fmt.Sprintf("%d_%s", accountID, result.Email)
-
-			err1 := s.xrayApi.RemoveUser(result.Tag, prefixedEmail)
+			err1 := s.xrayApi.RemoveUser(result.Tag, result.Email)
 			if err1 == nil {
-				logger.Debug("Client disabled by api:", prefixedEmail)
+				logger.Debug("Client disabled by api:", result.Email)
 			} else {
-				if strings.Contains(err1.Error(), fmt.Sprintf("User %s not found.", prefixedEmail)) {
+				if strings.Contains(err1.Error(), fmt.Sprintf("User %s not found.", result.Email)) {
 					logger.Debug("User is already disabled. Nothing to do more...")
 				} else {
 					logger.Debug("Error in disabling client by api:", err1)
