@@ -1069,11 +1069,14 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 				"all_time":    gorm.Expr("COALESCE(all_time, 0) + ?", traffic.Up+traffic.Down),
 				"total":       tx.Table("client_traffics").Select("total").Where("email = ? AND inbound_id = ?", email, inboundID),
 				"expiry_time": tx.Table("client_traffics").Select("expiry_time").Where("email = ? AND inbound_id = ?", email, inboundID),
+				"enable":      tx.Table("client_traffics").Select("enable").Where("email = ? AND inbound_id = ?", email, inboundID),
 				"last_online": time.Now().UnixMilli(),
 			}).Error
 
 		if err == nil {
 			onlineClients = append(onlineClients, email)
+			// Also add the full prefixed email to ensure both master and slave can show online status if needed
+			onlineClients = append(onlineClients, fullEmail)
 		} else {
 			logger.Warningf("Failed to update traffic for email %s: %v", fullEmail, err)
 		}
@@ -2996,11 +2999,23 @@ func (s *InboundService) PerformFullSync(targetId int) (int, error) {
 			s.AddClientStat(tx, targetId, clientToAdd)
 		} else if err == nil {
 			// Update quota and status from source
-			tx.Model(&existing).Updates(map[string]any{
+			// Also sync usage from master to ensure consistency
+			var masterStat xray.ClientTraffic
+			err = tx.Model(&xray.ClientTraffic{}).Where("inbound_id = ? AND email = ?", targetInbound.SyncSourceId, clientToAdd.Email).First(&masterStat).Error
+
+			updateMap := map[string]any{
 				"total":       clientToAdd.TotalGB,
 				"expiry_time": clientToAdd.ExpiryTime,
 				"enable":      clientToAdd.Enable,
-			})
+			}
+
+			if err == nil {
+				updateMap["up"] = masterStat.Up
+				updateMap["down"] = masterStat.Down
+				updateMap["all_time"] = masterStat.AllTime
+			}
+
+			tx.Model(&existing).Updates(updateMap)
 		}
 	}
 
