@@ -315,15 +315,15 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, o
 	// 手动切换组的 Proxies 列表
 	var topLevelProxies []string
 
-	// 如果有 xcdn 节点，创建一个 "三网优化节点" 组
+	// 如果有 xcdn 节点，创建一个 "⚡ 三网优化节点" 组
+	var optimizationGroupName string
 	if len(xcdnProxyNames) > 0 {
-		optimizationGroupName := "三网优化节点"
+		optimizationGroupName = "⚡ 三网优化节点"
 		groups = append(groups, ClashProxyGroup{
 			Name:    optimizationGroupName,
 			Type:    "select",
 			Proxies: xcdnProxyNames,
 		})
-		topLevelProxies = append(topLevelProxies, optimizationGroupName)
 	}
 
 	// 2. 按排序后的顺序创建 load-balance 组和 url-test 单节点组
@@ -360,6 +360,11 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, o
 		// load-balance 组和单节点组都加入手动切换
 		topLevelProxies = append(topLevelProxies, groupName)
 		topLevelProxies = append(topLevelProxies, singleNodeGroupName)
+	}
+
+	// 如果存在三网优化节点，将它追加到 "手动切换" 的最后面
+	if optimizationGroupName != "" {
+		topLevelProxies = append(topLevelProxies, optimizationGroupName)
 	}
 
 	// 更新 "手动切换" 组的 proxies
