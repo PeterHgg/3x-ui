@@ -75,20 +75,26 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 
 	// 1. Fetch IPs from Wetest
 	addLog("Fetching best IPs from wetest.vip...")
-	ips, rawBody, err := j.fetchBestIPs()
+	ips, statusCode, rawBody, err := j.fetchBestIPs()
 	if err != nil {
 		errMSg := fmt.Sprintf("Failed to fetch IPs: %v", err)
 		addLog(errMSg)
 		if rawBody != "" {
-			addLog("Wetest raw response: " + rawBody)
+			addLog(fmt.Sprintf("Wetest response (status=%d): %s", statusCode, rawBody))
 		}
 		return logs, err
 	}
+	addLog(fmt.Sprintf("Wetest response (status=%d): %s", statusCode, rawBody))
 	addLog(fmt.Sprintf("Fetched IPs - Telecom: %d, Unicom: %d, Mobile: %d",
 		len(ips.Data.CT), len(ips.Data.CU), len(ips.Data.CM)))
 	addLog(fmt.Sprintf("Telecom IPs: %v", ips.Data.CT))
 	addLog(fmt.Sprintf("Unicom IPs: %v", ips.Data.CU))
 	addLog(fmt.Sprintf("Mobile IPs: %v", ips.Data.CM))
+	if len(ips.Data.CT) == 0 && len(ips.Data.CU) == 0 && len(ips.Data.CM) == 0 {
+		err := fmt.Errorf("wetest returned empty IP list")
+		addLog("No IPs returned from wetest, aborting DNS sync")
+		return logs, err
+	}
 
 	// 2. Update Aliyun DNS
 	addLog("Updating Aliyun DNS records...")
@@ -153,24 +159,24 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 	return logs, nil
 }
 
-func (j *AliyunDNSJob) fetchBestIPs() (*WetestResponse, string, error) {
+func (j *AliyunDNSJob) fetchBestIPs() (*WetestResponse, int, string, error) {
 	apiUrl := "https://www.wetest.vip/api/cf2dns/get_cloudflare_ip?key=o1zrmHAF&type=v4"
 	resp, err := http.Get(apiUrl)
 	if err != nil {
-		return nil, "", err
+		return nil, 0, "", err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, "", err
+		return nil, resp.StatusCode, "", err
 	}
 	rawBody := string(body)
 
 	var wetestResp WetestResponse
 	err = json.Unmarshal(body, &wetestResp)
 	if err != nil {
-		return nil, rawBody, err
+		return nil, resp.StatusCode, rawBody, err
 	}
 
 	// Check status, it could be int or bool (true)
@@ -191,10 +197,10 @@ func (j *AliyunDNSJob) fetchBestIPs() (*WetestResponse, string, error) {
 	}
 
 	if !statusOK {
-		return nil, rawBody, fmt.Errorf("wetest api error status: %v", wetestResp.Status)
+		return nil, resp.StatusCode, rawBody, fmt.Errorf("wetest api error status: %v", wetestResp.Status)
 	}
 
-	return &wetestResp, rawBody, nil
+	return &wetestResp, resp.StatusCode, rawBody, nil
 }
 
 type AliyunDNSClient struct {
