@@ -106,6 +106,7 @@ var defaultValueMap = map[string]string{
 	"clashCount":        "0",
 	"clashNoPort":       "false",
 	"clashLowSpeedLine": "false",
+	"clashXcdnEnabled":  "false",
 	"clashCustomRules": `DOMAIN-SUFFIX,szbdyd.com,REJECT
 DOMAIN-SUFFIX,mcdn.bilivideo.com,REJECT
 DOMAIN-SUFFIX,mcdn.bilivideo.cn,REJECT
@@ -762,6 +763,7 @@ func (s *SettingService) GetDefaultSettings(host string) (any, error) {
 		"clashNoPort":       func() (any, error) { return s.GetClashNoPort() },
 		"clashCustomRules":  func() (any, error) { return s.GetClashCustomRules() },
 		"clashLowSpeedLine": func() (any, error) { return s.GetClashLowSpeedLine() },
+		"clashXcdnEnabled":  func() (any, error) { return s.GetClashXcdnEnabled() },
 	}
 
 	result := make(map[string]any)
@@ -876,4 +878,12 @@ func (s *SettingService) GetClashLowSpeedLine() (bool, error) {
 
 func (s *SettingService) UpdateClashLowSpeedLine(enable bool) error {
 	return s.setBool("clashLowSpeedLine", enable)
+}
+
+func (s *SettingService) GetClashXcdnEnabled() (bool, error) {
+	return s.getBool("clashXcdnEnabled")
+}
+
+func (s *SettingService) UpdateClashXcdnEnabled(enable bool) error {
+	return s.setBool("clashXcdnEnabled", enable)
 }

@@ -88,6 +88,7 @@ type AllSetting struct {
 	ClashCount        int    `json:"clashCount" form:"clashCount"`               // Default CDN node count
 	ClashNoPort       bool   `json:"clashNoPort" form:"clashNoPort"`             // Hide port in subscription URL
 	ClashLowSpeedLine bool   `json:"clashLowSpeedLine" form:"clashLowSpeedLine"` // Enable low-speed direct line nodes
+	ClashXcdnEnabled  bool   `json:"clashXcdnEnabled" form:"clashXcdnEnabled"`   // Enable xcdn three-network optimization nodes
 	ClashCustomRules  string `json:"clashCustomRules" form:"clashCustomRules"`   // Custom Clash rules
 
 	// LDAP settings

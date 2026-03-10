@@ -188,6 +188,13 @@ DOMAIN,api.example.com,DIRECT" style="font-family: monospace; width: 100%"></a-t
                 <a-switch v-model="allSetting.clashNoPort"></a-switch>
             </template>
         </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>启用三网优化节点 (xcdn)</template>
+            <template #description>开启后会在生成的配置文件中为每个节点额外生成带 x 前缀的三网优化节点并放置在 "⚡ 三网优化节点" 组中。</template>
+            <template #control>
+                <a-switch v-model="allSetting.clashXcdnEnabled"></a-switch>
+            </template>
+        </a-setting-list-item>
     </a-collapse-panel>
 </a-collapse>
 {{end}}

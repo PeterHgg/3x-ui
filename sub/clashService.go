@@ -53,8 +53,11 @@ func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, cou
 		return nil, fmt.Errorf("未找到对应的节点")
 	}
 
-	// 生成 CDN 节点（按备注分组），并额外生成 xcdn 节点
-	proxiesMap, orderedGroupNames, xcdnProxyNames := s.generateCDNProxies(baseNodes, cdnDomain, count, prefix, subPort, uuid, password)
+	settingService := new(service.SettingService)
+	xcdnEnabled, _ := settingService.GetClashXcdnEnabled()
+
+	// 生成 CDN 节点（按备注分组），如果开关开启，则额外生成 xcdn 节点
+	proxiesMap, orderedGroupNames, xcdnProxyNames := s.generateCDNProxies(baseNodes, cdnDomain, count, prefix, subPort, uuid, password, xcdnEnabled)
 
 	// 生成代理组
 	proxyGroups := s.generateProxyGroups(proxiesMap, orderedGroupNames, xcdnProxyNames)
@@ -110,7 +113,7 @@ func (s *ClashService) findNodesByPassword(password string) []*model.Inbound {
 }
 
 // 生成 CDN 节点，返回proxiesMap、按inbound ID排序的组名列表，以及 xcdn 节点名称列表
-func (s *ClashService) generateCDNProxies(baseNodes []*model.Inbound, cdnDomain string, count int, prefix string, subPort int, targetUUID string, targetPassword string) (map[string][]ClashProxy, []string, []string) {
+func (s *ClashService) generateCDNProxies(baseNodes []*model.Inbound, cdnDomain string, count int, prefix string, subPort int, targetUUID string, targetPassword string, xcdnEnabled bool) (map[string][]ClashProxy, []string, []string) {
 	proxiesMap := make(map[string][]ClashProxy)
 	groupIDMap := make(map[string]int) // 记录每个组名对应的最小inbound ID
 	var xcdnProxyNames []string
@@ -142,23 +145,25 @@ func (s *ClashService) generateCDNProxies(baseNodes []*model.Inbound, cdnDomain 
 			}
 		}
 
-		// 生成 xcdn 节点
-		xcdnServer := fmt.Sprintf("x%s.%s", prefix, cdnDomain)
-		var xcdnProxy ClashProxy
-		if inbound.Protocol == "vmess" {
-			xcdnProxy = s.createVMessProxyWithNamePrefix(inbound, xcdnServer, fmt.Sprintf("x%s", prefix), targetUUID)
-		} else if inbound.Protocol == "trojan" {
-			xcdnProxy = s.createTrojanProxyWithNamePrefix(inbound, xcdnServer, fmt.Sprintf("x%s", prefix), targetPassword)
-		}
+		// 如果开启了三网优化节点选项，生成 xcdn 节点
+		if xcdnEnabled {
+			xcdnServer := fmt.Sprintf("x%s.%s", prefix, cdnDomain)
+			var xcdnProxy ClashProxy
+			if inbound.Protocol == "vmess" {
+				xcdnProxy = s.createVMessProxyWithNamePrefix(inbound, xcdnServer, fmt.Sprintf("x%s", prefix), targetUUID)
+			} else if inbound.Protocol == "trojan" {
+				xcdnProxy = s.createTrojanProxyWithNamePrefix(inbound, xcdnServer, fmt.Sprintf("x%s", prefix), targetPassword)
+			}
 
-		if xcdnProxy.Name != "" {
-			// 将 xcdn 节点也加到全部节点列表里以供输出，但不跟普通的在一起（如果想放普通组里也可以）
-			// 根据需求"这些节点放到一个select的组，叫三网优化节点"
-			// 为了最终的 `allProxies` 展平输出，这里也需要将这些节点保存下来
-			// 我们创建一个专用的 "xcdn" 内部组名来存放所有的 xcdnProxy
-			xcdnGroupKey := "__xcdn__"
-			proxiesMap[xcdnGroupKey] = append(proxiesMap[xcdnGroupKey], xcdnProxy)
-			xcdnProxyNames = append(xcdnProxyNames, xcdnProxy.Name)
+			if xcdnProxy.Name != "" {
+				// 将 xcdn 节点也加到全部节点列表里以供输出，但不跟普通的在一起（如果想放普通组里也可以）
+				// 根据需求"这些节点放到一个select的组，叫三网优化节点"
+				// 为了最终的 `allProxies` 展平输出，这里也需要将这些节点保存下来
+				// 我们创建一个专用的 "xcdn" 内部组名来存放所有的 xcdnProxy
+				xcdnGroupKey := "__xcdn__"
+				proxiesMap[xcdnGroupKey] = append(proxiesMap[xcdnGroupKey], xcdnProxy)
+				xcdnProxyNames = append(xcdnProxyNames, xcdnProxy.Name)
+			}
 		}
 	}
 
