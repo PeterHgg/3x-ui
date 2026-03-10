@@ -59,6 +59,7 @@ class AllSetting {
         this.clashPrefix = "";
         this.clashCount = 0;
         this.clashNoPort = false;
+        this.clashXcdnEnabled = false;
         this.clashCustomRules = `DOMAIN-SUFFIX,szbdyd.com,REJECT
 DOMAIN-SUFFIX,mcdn.bilivideo.com,REJECT
 DOMAIN-SUFFIX,mcdn.bilivideo.cn,REJECT
