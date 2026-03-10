@@ -22,13 +22,25 @@ type AliyunDNSJob struct {
 	settingService service.SettingService
 }
 
+type WetestIP struct {
+	IP string `json:"ip"`
+}
+
+type WetestData struct {
+	CM []WetestIP `json:"CM"`
+	Cm []WetestIP `json:"cm"`
+	CU []WetestIP `json:"CU"`
+	Cu []WetestIP `json:"cu"`
+	CT []WetestIP `json:"CT"`
+	Ct []WetestIP `json:"ct"`
+}
+
 type WetestResponse struct {
-	Status any `json:"status"`
-	Data   struct {
-		CM []string `json:"cm"` // Mobile
-		CU []string `json:"cu"` // Unicom
-		CT []string `json:"ct"` // Telecom
-	} `json:"data"`
+	Status any       `json:"status"`
+	Code   int       `json:"code"`
+	Msg    string    `json:"msg"`
+	Data   WetestData `json:"data"`
+	Info   WetestData `json:"info"`
 }
 
 func NewAliyunDNSJob() *AliyunDNSJob {
@@ -84,13 +96,35 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 		}
 		return logs, err
 	}
+	toIPs := func(list []WetestIP) []string {
+		res := make([]string, 0, len(list))
+		for _, item := range list {
+			if item.IP != "" {
+				res = append(res, item.IP)
+			}
+		}
+		return res
+	}
+	pickIPs := func(candidates ...[]WetestIP) []string {
+		for _, c := range candidates {
+			if len(c) > 0 {
+				return toIPs(c)
+			}
+		}
+		return nil
+	}
+
+	ctIPs := pickIPs(ips.Data.CT, ips.Data.Ct, ips.Info.CT, ips.Info.Ct)
+	cuIPs := pickIPs(ips.Data.CU, ips.Data.Cu, ips.Info.CU, ips.Info.Cu)
+	cmIPs := pickIPs(ips.Data.CM, ips.Data.Cm, ips.Info.CM, ips.Info.Cm)
+
 	addLog(fmt.Sprintf("Wetest response (status=%d): %s", statusCode, rawBody))
 	addLog(fmt.Sprintf("Fetched IPs - Telecom: %d, Unicom: %d, Mobile: %d",
-		len(ips.Data.CT), len(ips.Data.CU), len(ips.Data.CM)))
-	addLog(fmt.Sprintf("Telecom IPs: %v", ips.Data.CT))
-	addLog(fmt.Sprintf("Unicom IPs: %v", ips.Data.CU))
-	addLog(fmt.Sprintf("Mobile IPs: %v", ips.Data.CM))
-	if len(ips.Data.CT) == 0 && len(ips.Data.CU) == 0 && len(ips.Data.CM) == 0 {
+		len(ctIPs), len(cuIPs), len(cmIPs)))
+	addLog(fmt.Sprintf("Telecom IPs: %v", ctIPs))
+	addLog(fmt.Sprintf("Unicom IPs: %v", cuIPs))
+	addLog(fmt.Sprintf("Mobile IPs: %v", cmIPs))
+	if len(ctIPs) == 0 && len(cuIPs) == 0 && len(cmIPs) == 0 {
 		err := fmt.Errorf("wetest returned empty IP list")
 		addLog("No IPs returned from wetest, aborting DNS sync")
 		return logs, err
@@ -179,7 +213,6 @@ func (j *AliyunDNSJob) fetchBestIPs() (*WetestResponse, int, string, error) {
 		return nil, resp.StatusCode, rawBody, err
 	}
 
-	// Check status, it could be int or bool (true)
 	statusOK := false
 	switch v := wetestResp.Status.(type) {
 	case int:
@@ -196,8 +229,8 @@ func (j *AliyunDNSJob) fetchBestIPs() (*WetestResponse, int, string, error) {
 		}
 	}
 
-	if !statusOK {
-		return nil, resp.StatusCode, rawBody, fmt.Errorf("wetest api error status: %v", wetestResp.Status)
+	if !statusOK && wetestResp.Code != 200 && wetestResp.Code != 1 {
+		return nil, resp.StatusCode, rawBody, fmt.Errorf("wetest api error status: %v code: %d msg: %s", wetestResp.Status, wetestResp.Code, wetestResp.Msg)
 	}
 
 	return &wetestResp, resp.StatusCode, rawBody, nil
