@@ -23,7 +23,7 @@ type AliyunDNSJob struct {
 }
 
 type WetestResponse struct {
-	Status int `json:"status"`
+	Status any `json:"status"`
 	Data   struct {
 		CM []string `json:"cm"` // Mobile
 		CU []string `json:"cu"` // Unicom
@@ -159,8 +159,25 @@ func (j *AliyunDNSJob) fetchBestIPs() (*WetestResponse, error) {
 		return nil, err
 	}
 
-	if wetestResp.Status != 200 && wetestResp.Status != 1 {
-		return nil, fmt.Errorf("wetest api error status: %d", wetestResp.Status)
+	// Check status, it could be int or bool (true)
+	statusOK := false
+	switch v := wetestResp.Status.(type) {
+	case int:
+		if v == 200 || v == 1 {
+			statusOK = true
+		}
+	case float64: // JSON numbers unmarshal to float64 for 'any'
+		if v == 200 || v == 1 {
+			statusOK = true
+		}
+	case bool:
+		if v {
+			statusOK = true
+		}
+	}
+
+	if !statusOK {
+		return nil, fmt.Errorf("wetest api error status: %v", wetestResp.Status)
 	}
 
 	return &wetestResp, nil
