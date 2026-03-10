@@ -52,7 +52,7 @@ func (a *SettingController) initRouter(g *gin.RouterGroup) {
 func (a *SettingController) updateAliyunDNS(c *gin.Context) {
 	logs, err := job.NewAliyunDNSJob().Sync()
 	if err != nil {
-		jsonMsg(c, "Aliyun DNS sync failed", err)
+		jsonMsgObj(c, "Aliyun DNS sync failed", logs, err)
 	} else {
 		jsonObj(c, logs, nil)
 	}

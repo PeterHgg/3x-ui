@@ -402,6 +402,9 @@
             this.syncLogs.push('[OK] DNS sync finished');
             Vue.prototype.$message['success']('{{ i18n "pages.settings.updateSuccess" }}');
           } else {
+            if (Array.isArray(msg.obj)) {
+              this.syncLogs = [...this.syncLogs, ...msg.obj];
+            }
             this.syncLogs.push(`[ERROR] ${msg.msg}`);
           }
         } catch (e) {
