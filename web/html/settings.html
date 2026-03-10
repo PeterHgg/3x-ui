@@ -372,6 +372,14 @@
 
         window.location.replace(url.toString());
       },
+      async updateAliyunDNS() {
+        this.loading(true);
+        const msg = await HttpUtil.post("/panel/setting/updateAliyunDNS");
+        this.loading(false);
+        if (msg.success) {
+          Vue.prototype.$message['success'](msg.msg);
+        }
+      },
       toggleTwoFactor(newValue) {
         if (newValue) {
           const newTwoFactorToken = RandomUtil.randomBase32String()

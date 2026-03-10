@@ -6,6 +6,7 @@ import (
 
 	"github.com/mhsanaei/3x-ui/v2/util/crypto"
 	"github.com/mhsanaei/3x-ui/v2/web/entity"
+	"github.com/mhsanaei/3x-ui/v2/web/job"
 	"github.com/mhsanaei/3x-ui/v2/web/service"
 	"github.com/mhsanaei/3x-ui/v2/web/session"
 
@@ -43,7 +44,14 @@ func (a *SettingController) initRouter(g *gin.RouterGroup) {
 	g.POST("/update", a.updateSetting)
 	g.POST("/updateUser", a.updateUser)
 	g.POST("/restartPanel", a.restartPanel)
+	g.POST("/updateAliyunDNS", a.updateAliyunDNS)
 	g.GET("/getDefaultJsonConfig", a.getDefaultXrayConfig)
+}
+
+// updateAliyunDNS triggers a manual sync of Aliyun DNS records for xcdn nodes.
+func (a *SettingController) updateAliyunDNS(c *gin.Context) {
+	job.NewAliyunDNSJob().Run()
+	jsonMsg(c, "Aliyun DNS sync triggered", nil)
 }
 
 // getAllSetting retrieves all current settings.
