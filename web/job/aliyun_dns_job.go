@@ -179,13 +179,13 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 		return nil
 	}
 
-	if err := syncLine("telecom", ips.Data.CT); err != nil {
+	if err := syncLine("telecom", ctIPs); err != nil {
 		addLog(fmt.Sprintf("Telecom sync error: %v", err))
 	}
-	if err := syncLine("unicom", ips.Data.CU); err != nil {
+	if err := syncLine("unicom", cuIPs); err != nil {
 		addLog(fmt.Sprintf("Unicom sync error: %v", err))
 	}
-	if err := syncLine("mobile", ips.Data.CM); err != nil {
+	if err := syncLine("mobile", cmIPs); err != nil {
 		addLog(fmt.Sprintf("Mobile sync error: %v", err))
 	}
 
