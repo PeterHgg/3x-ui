@@ -53,11 +53,11 @@ func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, cou
 		return nil, fmt.Errorf("未找到对应的节点")
 	}
 
-	// 生成 CDN 节点（按备注分组）
-	proxiesMap, orderedGroupNames := s.generateCDNProxies(baseNodes, cdnDomain, count, prefix, subPort, uuid, password)
+	// 生成 CDN 节点（按备注分组），并额外生成 xcdn 节点
+	proxiesMap, orderedGroupNames, xcdnProxyNames := s.generateCDNProxies(baseNodes, cdnDomain, count, prefix, subPort, uuid, password)
 
 	// 生成代理组
-	proxyGroups := s.generateProxyGroups(proxiesMap, orderedGroupNames)
+	proxyGroups := s.generateProxyGroups(proxiesMap, orderedGroupNames, xcdnProxyNames)
 
 	// 生成规则提供者
 	ruleProviders := s.generateRuleProviders(origin)
@@ -109,10 +109,11 @@ func (s *ClashService) findNodesByPassword(password string) []*model.Inbound {
 	return inbounds
 }
 
-// 生成 CDN 节点，返回proxiesMap和按inbound ID排序的组名列表
-func (s *ClashService) generateCDNProxies(baseNodes []*model.Inbound, cdnDomain string, count int, prefix string, subPort int, targetUUID string, targetPassword string) (map[string][]ClashProxy, []string) {
+// 生成 CDN 节点，返回proxiesMap、按inbound ID排序的组名列表，以及 xcdn 节点名称列表
+func (s *ClashService) generateCDNProxies(baseNodes []*model.Inbound, cdnDomain string, count int, prefix string, subPort int, targetUUID string, targetPassword string) (map[string][]ClashProxy, []string, []string) {
 	proxiesMap := make(map[string][]ClashProxy)
 	groupIDMap := make(map[string]int) // 记录每个组名对应的最小inbound ID
+	var xcdnProxyNames []string
 
 	for _, inbound := range baseNodes {
 		groupName := inbound.Remark
@@ -125,6 +126,7 @@ func (s *ClashService) generateCDNProxies(baseNodes []*model.Inbound, cdnDomain 
 			groupIDMap[groupName] = inbound.Id
 		}
 
+		// 生成常规节点 (1cdn, 2cdn, ...)
 		for i := 1; i <= count; i++ {
 			cdnServer := fmt.Sprintf("%d%s.%s", i, prefix, cdnDomain)
 
@@ -139,6 +141,25 @@ func (s *ClashService) generateCDNProxies(baseNodes []*model.Inbound, cdnDomain 
 				proxiesMap[groupName] = append(proxiesMap[groupName], proxy)
 			}
 		}
+
+		// 生成 xcdn 节点
+		xcdnServer := fmt.Sprintf("x%s.%s", prefix, cdnDomain)
+		var xcdnProxy ClashProxy
+		if inbound.Protocol == "vmess" {
+			xcdnProxy = s.createVMessProxyWithNamePrefix(inbound, xcdnServer, fmt.Sprintf("x%s", prefix), targetUUID)
+		} else if inbound.Protocol == "trojan" {
+			xcdnProxy = s.createTrojanProxyWithNamePrefix(inbound, xcdnServer, fmt.Sprintf("x%s", prefix), targetPassword)
+		}
+
+		if xcdnProxy.Name != "" {
+			// 将 xcdn 节点也加到全部节点列表里以供输出，但不跟普通的在一起（如果想放普通组里也可以）
+			// 根据需求"这些节点放到一个select的组，叫三网优化节点"
+			// 为了最终的 `allProxies` 展平输出，这里也需要将这些节点保存下来
+			// 我们创建一个专用的 "xcdn" 内部组名来存放所有的 xcdnProxy
+			xcdnGroupKey := "__xcdn__"
+			proxiesMap[xcdnGroupKey] = append(proxiesMap[xcdnGroupKey], xcdnProxy)
+			xcdnProxyNames = append(xcdnProxyNames, xcdnProxy.Name)
+		}
 	}
 
 	// 按inbound ID排序组名
@@ -150,7 +171,7 @@ func (s *ClashService) generateCDNProxies(baseNodes []*model.Inbound, cdnDomain 
 		return groupIDMap[orderedGroupNames[i]] < groupIDMap[orderedGroupNames[j]]
 	})
 
-	return proxiesMap, orderedGroupNames
+	return proxiesMap, orderedGroupNames, xcdnProxyNames
 }
 
 // 获取 WebSocket 路径
@@ -170,6 +191,27 @@ func (s *ClashService) getWebSocketPath(streamSettingsStr string) string {
 
 // 创建 VMess 代理
 func (s *ClashService) createVMessProxy(inbound *model.Inbound, cdnServer string, index int, prefix string, subPort int, targetUUID string) ClashProxy {
+	// 使用节点备注作为后缀
+	suffix := ""
+	if inbound.Remark != "" {
+		suffix = "-" + inbound.Remark
+	}
+	name := fmt.Sprintf("%d%s%s", index, prefix, suffix)
+	return s.createVMessProxyWithName(inbound, cdnServer, name, targetUUID)
+}
+
+// 创建特定名称前缀的 VMess 代理
+func (s *ClashService) createVMessProxyWithNamePrefix(inbound *model.Inbound, cdnServer string, prefix string, targetUUID string) ClashProxy {
+	suffix := ""
+	if inbound.Remark != "" {
+		suffix = "-" + inbound.Remark
+	}
+	name := fmt.Sprintf("%s%s", prefix, suffix)
+	return s.createVMessProxyWithName(inbound, cdnServer, name, targetUUID)
+}
+
+// 内部创建 VMess 代理的基础逻辑
+func (s *ClashService) createVMessProxyWithName(inbound *model.Inbound, cdnServer string, name string, targetUUID string) ClashProxy {
 	var settings map[string]interface{}
 	json.Unmarshal([]byte(inbound.Settings), &settings)
 
@@ -185,13 +227,6 @@ func (s *ClashService) createVMessProxy(inbound *model.Inbound, cdnServer string
 		client, _ := clients[0].(map[string]interface{})
 		uuid, _ = client["id"].(string)
 	}
-
-	// 使用节点备注作为后缀
-	suffix := ""
-	if inbound.Remark != "" {
-		suffix = "-" + inbound.Remark
-	}
-	name := fmt.Sprintf("%d%s%s", index, prefix, suffix)
 
 	return ClashProxy{
 		Name:    name,
@@ -212,6 +247,27 @@ func (s *ClashService) createVMessProxy(inbound *model.Inbound, cdnServer string
 
 // 创建 Trojan 代理
 func (s *ClashService) createTrojanProxy(inbound *model.Inbound, cdnServer string, index int, prefix string, subPort int, targetPassword string) ClashProxy {
+	// 使用节点备注作为后缀
+	suffix := ""
+	if inbound.Remark != "" {
+		suffix = "-" + inbound.Remark
+	}
+	name := fmt.Sprintf("%d%s%s", index, prefix, suffix)
+	return s.createTrojanProxyWithName(inbound, cdnServer, name, targetPassword)
+}
+
+// 创建特定名称前缀的 Trojan 代理
+func (s *ClashService) createTrojanProxyWithNamePrefix(inbound *model.Inbound, cdnServer string, prefix string, targetPassword string) ClashProxy {
+	suffix := ""
+	if inbound.Remark != "" {
+		suffix = "-" + inbound.Remark
+	}
+	name := fmt.Sprintf("%s%s", prefix, suffix)
+	return s.createTrojanProxyWithName(inbound, cdnServer, name, targetPassword)
+}
+
+// 内部创建 Trojan 代理的基础逻辑
+func (s *ClashService) createTrojanProxyWithName(inbound *model.Inbound, cdnServer string, name string, targetPassword string) ClashProxy {
 	var settings map[string]interface{}
 	json.Unmarshal([]byte(inbound.Settings), &settings)
 
@@ -227,13 +283,6 @@ func (s *ClashService) createTrojanProxy(inbound *model.Inbound, cdnServer strin
 		client, _ := clients[0].(map[string]interface{})
 		password, _ = client["password"].(string)
 	}
-
-	// 使用节点备注作为后缀
-	suffix := ""
-	if inbound.Remark != "" {
-		suffix = "-" + inbound.Remark
-	}
-	name := fmt.Sprintf("%d%s%s", index, prefix, suffix)
 
 	return ClashProxy{
 		Name:           name,
@@ -251,8 +300,8 @@ func (s *ClashService) createTrojanProxy(inbound *model.Inbound, cdnServer strin
 }
 
 
-// 生成代理组（使用按inbound ID排序的组名列表）
-func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, orderedGroupNames []string) []ClashProxyGroup {
+// 生成代理组（使用按inbound ID排序的组名列表，并包含 xcdn 节点组）
+func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, orderedGroupNames []string, xcdnProxyNames []string) []ClashProxyGroup {
 	groups := []ClashProxyGroup{}
 
 	// 1. 创建 "🚀 手动切换" 组 (放在最前面)
@@ -265,6 +314,17 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, o
 
 	// 手动切换组的 Proxies 列表
 	var topLevelProxies []string
+
+	// 如果有 xcdn 节点，创建一个 "三网优化节点" 组
+	if len(xcdnProxyNames) > 0 {
+		optimizationGroupName := "三网优化节点"
+		groups = append(groups, ClashProxyGroup{
+			Name:    optimizationGroupName,
+			Type:    "select",
+			Proxies: xcdnProxyNames,
+		})
+		topLevelProxies = append(topLevelProxies, optimizationGroupName)
+	}
 
 	// 2. 按排序后的顺序创建 load-balance 组和 url-test 单节点组
 	for _, groupName := range orderedGroupNames {
