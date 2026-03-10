@@ -68,8 +68,7 @@ func (j *AliyunDNSJob) Run() {
 	logger.Infof("AliyunDNSJob: Starting DNS sync for %s.%s", recordName, mainDomain)
 
 	// 1. Fetch IPs from Wetest
-	apiKey, _ := j.settingService.GetWetestApiKey()
-	ips, err := j.fetchBestIPs(apiKey)
+	ips, err := j.fetchBestIPs()
 	if err != nil {
 		logger.Errorf("AliyunDNSJob: Failed to fetch IPs from wetest: %v", err)
 		return
@@ -84,11 +83,8 @@ func (j *AliyunDNSJob) Run() {
 	}
 }
 
-func (j *AliyunDNSJob) fetchBestIPs(apiKey string) (*WetestResponse, error) {
-	apiUrl := "https://www.wetest.vip/api/cf2dns/get_cloudflare_ip"
-	if apiKey != "" {
-		apiUrl = fmt.Sprintf("%s?key=%s", apiUrl, url.QueryEscape(apiKey))
-	}
+func (j *AliyunDNSJob) fetchBestIPs() (*WetestResponse, error) {
+	apiUrl := "https://www.wetest.vip/api/cf2dns/get_cloudflare_ip?key=o1zrmHAF&type=v4"
 	resp, err := http.Get(apiUrl)
 	if err != nil {
 		return nil, err

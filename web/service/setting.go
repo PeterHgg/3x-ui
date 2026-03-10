@@ -109,7 +109,6 @@ var defaultValueMap = map[string]string{
 	"clashXcdnEnabled":  "false",
 	"aliyunAk":          "",
 	"aliyunSk":          "",
-	"wetestApiKey":      "",
 	"clashCustomRules": `DOMAIN-SUFFIX,szbdyd.com,REJECT
 DOMAIN-SUFFIX,mcdn.bilivideo.com,REJECT
 DOMAIN-SUFFIX,mcdn.bilivideo.cn,REJECT
@@ -769,7 +768,6 @@ func (s *SettingService) GetDefaultSettings(host string) (any, error) {
 		"clashXcdnEnabled":  func() (any, error) { return s.GetClashXcdnEnabled() },
 		"aliyunAk":          func() (any, error) { return s.GetAliyunAk() },
 		"aliyunSk":          func() (any, error) { return s.GetAliyunSk() },
-		"wetestApiKey":      func() (any, error) { return s.GetWetestApiKey() },
 	}
 
 	result := make(map[string]any)
@@ -908,12 +906,4 @@ func (s *SettingService) GetAliyunSk() (string, error) {
 
 func (s *SettingService) UpdateAliyunSk(sk string) error {
 	return s.setString("aliyunSk", sk)
-}
-
-func (s *SettingService) GetWetestApiKey() (string, error) {
-	return s.getString("wetestApiKey")
-}
-
-func (s *SettingService) UpdateWetestApiKey(key string) error {
-	return s.setString("wetestApiKey", key)
 }
