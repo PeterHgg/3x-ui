@@ -36,51 +36,108 @@ func NewAliyunDNSJob() *AliyunDNSJob {
 }
 
 func (j *AliyunDNSJob) Run() {
+	_, _ = j.Sync()
+}
+
+func (j *AliyunDNSJob) Sync() ([]string, error) {
+	var logs []string
+	addLog := func(msg string) {
+		logs = append(logs, fmt.Sprintf("[%s] %s", time.Now().Format("15:04:05"), msg))
+		logger.Info("AliyunDNSJob:", msg)
+	}
+
 	enabled, _ := j.settingService.GetClashXcdnEnabled()
 	if !enabled {
-		return
+		return logs, fmt.Errorf("Clash XCDN feature not enabled")
 	}
 
 	ak, _ := j.settingService.GetAliyunAk()
 	sk, _ := j.settingService.GetAliyunSk()
 	if ak == "" || sk == "" {
-		logger.Debug("AliyunDNSJob: Aliyun AK/SK not configured, skipping")
-		return
+		return logs, fmt.Errorf("Aliyun AK/SK not configured")
 	}
 
 	mainDomain, _ := j.settingService.GetClashDomain()
 	if mainDomain == "" {
-		// Fallback to sub domain
 		mainDomain, _ = j.settingService.GetSubDomain()
 	}
 	if mainDomain == "" {
-		logger.Warning("AliyunDNSJob: Clash domain not configured, skipping")
-		return
+		return logs, fmt.Errorf("Clash domain not configured")
 	}
 
 	prefix, _ := j.settingService.GetClashPrefix()
 	if prefix == "" {
 		prefix = "cdn"
 	}
-	// xcdn node record name
 	recordName := "x" + prefix
 
-	logger.Infof("AliyunDNSJob: Starting DNS sync for %s.%s", recordName, mainDomain)
+	addLog(fmt.Sprintf("Starting DNS sync for %s.%s", recordName, mainDomain))
 
 	// 1. Fetch IPs from Wetest
+	addLog("Fetching best IPs from wetest.vip...")
 	ips, err := j.fetchBestIPs()
 	if err != nil {
-		logger.Errorf("AliyunDNSJob: Failed to fetch IPs from wetest: %v", err)
-		return
+		errMSg := fmt.Sprintf("Failed to fetch IPs: %v", err)
+		addLog(errMSg)
+		return logs, err
 	}
+	addLog(fmt.Sprintf("Fetched IPs - Telecom: %d, Unicom: %d, Mobile: %d",
+		len(ips.Data.CT), len(ips.Data.CU), len(ips.Data.CM)))
 
 	// 2. Update Aliyun DNS
-	err = j.syncAliyunDNS(ak, sk, mainDomain, recordName, ips)
-	if err != nil {
-		logger.Errorf("AliyunDNSJob: Failed to sync Aliyun DNS: %v", err)
-	} else {
-		logger.Infof("AliyunDNSJob: Successfully synced DNS records for %s.%s", recordName, mainDomain)
+	addLog("Updating Aliyun DNS records...")
+	syncLine := func(line string, newIPs []string) error {
+		if len(newIPs) == 0 {
+			return nil
+		}
+		addLog(fmt.Sprintf("Syncing line [%s] with %d IPs...", line, len(newIPs)))
+		client := NewAliyunDNSClient(ak, sk)
+		existingRecords, err := client.GetRecords(mainDomain, recordName, line)
+		if err != nil {
+			return err
+		}
+
+		existingIPMap := make(map[string]string)
+		for _, r := range existingRecords {
+			existingIPMap[r.Value] = r.RecordId
+		}
+
+		newIPMap := make(map[string]bool)
+		for _, ip := range newIPs {
+			newIPMap[ip] = true
+			if _, exists := existingIPMap[ip]; !exists {
+				addLog(fmt.Sprintf("Adding record: %s -> %s", line, ip))
+				err := client.AddRecord(mainDomain, recordName, "A", ip, line)
+				if err != nil {
+					addLog(fmt.Sprintf("Error adding %s: %v", ip, err))
+				}
+			}
+		}
+
+		for ip, recordId := range existingIPMap {
+			if !newIPMap[ip] {
+				addLog(fmt.Sprintf("Deleting old record: %s -> %s", line, ip))
+				err := client.DeleteRecord(recordId)
+				if err != nil {
+					addLog(fmt.Sprintf("Error deleting %s: %v", ip, err))
+				}
+			}
+		}
+		return nil
 	}
+
+	if err := syncLine("telecom", ips.Data.CT); err != nil {
+		addLog(fmt.Sprintf("Telecom sync error: %v", err))
+	}
+	if err := syncLine("unicom", ips.Data.CU); err != nil {
+		addLog(fmt.Sprintf("Unicom sync error: %v", err))
+	}
+	if err := syncLine("mobile", ips.Data.CM); err != nil {
+		addLog(fmt.Sprintf("Mobile sync error: %v", err))
+	}
+
+	addLog("DNS sync completed successfully")
+	return logs, nil
 }
 
 func (j *AliyunDNSJob) fetchBestIPs() (*WetestResponse, error) {
@@ -107,67 +164,6 @@ func (j *AliyunDNSJob) fetchBestIPs() (*WetestResponse, error) {
 	}
 
 	return &wetestResp, nil
-}
-
-func (j *AliyunDNSJob) syncAliyunDNS(ak, sk, domain, record string, ips *WetestResponse) error {
-	client := NewAliyunDNSClient(ak, sk)
-
-	syncLine := func(line string, newIPs []string) error {
-		if len(newIPs) == 0 {
-			return nil
-		}
-
-		// Get existing records for this line
-		existingRecords, err := client.GetRecords(domain, record, line)
-		if err != nil {
-			return err
-		}
-
-		existingIPMap := make(map[string]string) // ip -> recordId
-		for _, r := range existingRecords {
-			existingIPMap[r.Value] = r.RecordId
-		}
-
-		newIPMap := make(map[string]bool)
-		for _, ip := range newIPs {
-			newIPMap[ip] = true
-			if _, exists := existingIPMap[ip]; !exists {
-				// Add new record
-				err := client.AddRecord(domain, record, "A", ip, line)
-				if err != nil {
-					logger.Warningf("AliyunDNSJob: Failed to add record %s for %s: %v", ip, line, err)
-				}
-			}
-		}
-
-		// Remove records not in the new list
-		for ip, recordId := range existingIPMap {
-			if !newIPMap[ip] {
-				err := client.DeleteRecord(recordId)
-				if err != nil {
-					logger.Warningf("AliyunDNSJob: Failed to delete record %s (%s): %v", ip, recordId, err)
-				}
-			}
-		}
-
-		return nil
-	}
-
-	// Aliyun line names (standard)
-	err := syncLine("telecom", ips.Data.CT)
-	if err != nil {
-		return err
-	}
-	err = syncLine("unicom", ips.Data.CU)
-	if err != nil {
-		return err
-	}
-	err = syncLine("mobile", ips.Data.CM)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 type AliyunDNSClient struct {

@@ -50,8 +50,12 @@ func (a *SettingController) initRouter(g *gin.RouterGroup) {
 
 // updateAliyunDNS triggers a manual sync of Aliyun DNS records for xcdn nodes.
 func (a *SettingController) updateAliyunDNS(c *gin.Context) {
-	job.NewAliyunDNSJob().Run()
-	jsonMsg(c, "Aliyun DNS sync triggered", nil)
+	logs, err := job.NewAliyunDNSJob().Sync()
+	if err != nil {
+		jsonMsg(c, "Aliyun DNS sync failed", err)
+	} else {
+		jsonObj(c, logs, nil)
+	}
 }
 
 // getAllSetting retrieves all current settings.
