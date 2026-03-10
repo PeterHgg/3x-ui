@@ -75,30 +75,41 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 
 	// 1. Fetch IPs from Wetest
 	addLog("Fetching best IPs from wetest.vip...")
-	ips, err := j.fetchBestIPs()
+	ips, rawBody, err := j.fetchBestIPs()
 	if err != nil {
 		errMSg := fmt.Sprintf("Failed to fetch IPs: %v", err)
 		addLog(errMSg)
+		if rawBody != "" {
+			addLog("Wetest raw response: " + rawBody)
+		}
 		return logs, err
 	}
 	addLog(fmt.Sprintf("Fetched IPs - Telecom: %d, Unicom: %d, Mobile: %d",
 		len(ips.Data.CT), len(ips.Data.CU), len(ips.Data.CM)))
+	addLog(fmt.Sprintf("Telecom IPs: %v", ips.Data.CT))
+	addLog(fmt.Sprintf("Unicom IPs: %v", ips.Data.CU))
+	addLog(fmt.Sprintf("Mobile IPs: %v", ips.Data.CM))
 
 	// 2. Update Aliyun DNS
 	addLog("Updating Aliyun DNS records...")
+	client := NewAliyunDNSClient(ak, sk)
 	syncLine := func(line string, newIPs []string) error {
+		addLog(fmt.Sprintf("Syncing line [%s]...", line))
 		if len(newIPs) == 0 {
+			addLog(fmt.Sprintf("No IPs returned for line [%s], skipping", line))
 			return nil
 		}
-		addLog(fmt.Sprintf("Syncing line [%s] with %d IPs...", line, len(newIPs)))
-		client := NewAliyunDNSClient(ak, sk)
+		addLog(fmt.Sprintf("Line [%s] target IPs: %v", line, newIPs))
+
 		existingRecords, err := client.GetRecords(mainDomain, recordName, line)
 		if err != nil {
 			return err
 		}
+		addLog(fmt.Sprintf("Line [%s] existing records: %d", line, len(existingRecords)))
 
 		existingIPMap := make(map[string]string)
 		for _, r := range existingRecords {
+			addLog(fmt.Sprintf("Line [%s] existing record: %s -> %s (id=%s)", line, recordName, r.Value, r.RecordId))
 			existingIPMap[r.Value] = r.RecordId
 		}
 
@@ -111,6 +122,8 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 				if err != nil {
 					addLog(fmt.Sprintf("Error adding %s: %v", ip, err))
 				}
+			} else {
+				addLog(fmt.Sprintf("Keep record: %s -> %s", line, ip))
 			}
 		}
 
@@ -140,23 +153,24 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 	return logs, nil
 }
 
-func (j *AliyunDNSJob) fetchBestIPs() (*WetestResponse, error) {
+func (j *AliyunDNSJob) fetchBestIPs() (*WetestResponse, string, error) {
 	apiUrl := "https://www.wetest.vip/api/cf2dns/get_cloudflare_ip?key=o1zrmHAF&type=v4"
 	resp, err := http.Get(apiUrl)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
+	rawBody := string(body)
 
 	var wetestResp WetestResponse
 	err = json.Unmarshal(body, &wetestResp)
 	if err != nil {
-		return nil, err
+		return nil, rawBody, err
 	}
 
 	// Check status, it could be int or bool (true)
@@ -177,10 +191,10 @@ func (j *AliyunDNSJob) fetchBestIPs() (*WetestResponse, error) {
 	}
 
 	if !statusOK {
-		return nil, fmt.Errorf("wetest api error status: %v", wetestResp.Status)
+		return nil, rawBody, fmt.Errorf("wetest api error status: %v", wetestResp.Status)
 	}
 
-	return &wetestResp, nil
+	return &wetestResp, rawBody, nil
 }
 
 type AliyunDNSClient struct {

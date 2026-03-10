@@ -100,13 +100,16 @@
 
   <a-modal v-model="syncLogVisible" title="Aliyun DNS Sync" :footer="null" :closable="!syncLoading" :mask-closable="!syncLoading" destroy-on-close>
     <div style="background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 4px; font-family: monospace; max-height: 400px; overflow-y: auto;">
-      <div v-for="log in syncLogs" :key="log" style="margin-bottom: 4px; border-bottom: 1px solid #333; padding-bottom: 2px;">
+      <div v-for="(log, index) in syncLogs" :key="`${index}-${log}`" style="margin-bottom: 4px; border-bottom: 1px solid #333; padding-bottom: 2px;">
         <span v-if="log.includes('[ERROR]')" style="color: #f85149;">[[ log ]]</span>
         <span v-else-if="log.includes('Adding') || log.includes('Deleting')" style="color: #79c0ff;">[[ log ]]</span>
         <span v-else>[[ log ]]</span>
       </div>
       <div v-if="syncLoading" style="text-align: center; margin-top: 10px;">
         <a-spin size="small"></a-spin> <span style="margin-left: 8px;">Processing...</span>
+      </div>
+      <div v-else style="text-align: center; margin-top: 10px;">
+        <a-button type="primary" @click="syncLogVisible = false">完成</a-button>
       </div>
     </div>
   </a-modal>
@@ -396,9 +399,8 @@
           const msg = await HttpUtil.post("/panel/setting/updateAliyunDNS");
           if (msg.success) {
             this.syncLogs = msg.obj || [];
+            this.syncLogs.push('[OK] DNS sync finished');
             Vue.prototype.$message['success']('{{ i18n "pages.settings.updateSuccess" }}');
-            await PromiseUtil.sleep(1500);
-            this.syncLogVisible = false;
           } else {
             this.syncLogs.push(`[ERROR] ${msg.msg}`);
           }
