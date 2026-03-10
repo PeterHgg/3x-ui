@@ -60,6 +60,9 @@ class AllSetting {
         this.clashCount = 0;
         this.clashNoPort = false;
         this.clashXcdnEnabled = false;
+        this.aliyunAk = "";
+        this.aliyunSk = "";
+        this.wetestApiKey = "";
         this.clashCustomRules = `DOMAIN-SUFFIX,szbdyd.com,REJECT
 DOMAIN-SUFFIX,mcdn.bilivideo.com,REJECT
 DOMAIN-SUFFIX,mcdn.bilivideo.cn,REJECT

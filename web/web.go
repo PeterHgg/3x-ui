@@ -334,6 +334,10 @@ func (s *Server) startTask() {
 
 	// Periodic sync job - check and sync slave inbounds every 5 minutes
 	s.cron.AddJob("@every 5m", job.NewPeriodicSyncJob())
+
+	// Aliyun DNS sync job - sync xcdn IPs every 15 minutes
+	s.cron.AddJob("@every 15m", job.NewAliyunDNSJob())
+
 	if ldapEnabled, _ := s.settingService.GetLdapEnable(); ldapEnabled {
 		runtime, err := s.settingService.GetLdapSyncCron()
 		if err != nil || runtime == "" {

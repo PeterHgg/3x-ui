@@ -190,11 +190,34 @@ DOMAIN,api.example.com,DIRECT" style="font-family: monospace; width: 100%"></a-t
         </a-setting-list-item>
         <a-setting-list-item paddings="small">
             <template #title>启用三网优化节点 (xcdn)</template>
-            <template #description>开启后会在生成的配置文件中为每个节点额外生成带 x 前缀的三网优化节点并放置在 "⚡ 三网优化节点" 组中。</template>
+            <template #description>开启后会在生成的配置文件中为每个节点额外生成带 x 前缀的三网优化节点并放置在 "⚡ 三网优化节点"组中。此功能开启后支持根据 Wetest 优选 IP 自动更新阿里云 DNS 解析。</template>
             <template #control>
                 <a-switch v-model="allSetting.clashXcdnEnabled"></a-switch>
             </template>
         </a-setting-list-item>
+        <template v-if="allSetting.clashXcdnEnabled">
+            <a-setting-list-item paddings="small">
+                <template #title>阿里云 AccessKey ID</template>
+                <template #description>用于自动更新 DNS 解析，请确保该 AK 拥有阿里云 DNS 解析的修改权限</template>
+                <template #control>
+                    <a-input type="text" v-model="allSetting.aliyunAk" placeholder="AccessKey ID"></a-input>
+                </template>
+            </a-setting-list-item>
+            <a-setting-list-item paddings="small">
+                <template #title>阿里云 AccessKey Secret</template>
+                <template #description>阿里云 AccessKey Secret</template>
+                <template #control>
+                    <a-input-password v-model="allSetting.aliyunSk" placeholder="AccessKey Secret"></a-input-password>
+                </template>
+            </a-setting-list-item>
+            <a-setting-list-item paddings="small">
+                <template #title>Wetest API Key</template>
+                <template #description>用于获取 Cloudflare 优选 IP 的 API Key</template>
+                <template #control>
+                    <a-input type="text" v-model="allSetting.wetestApiKey" placeholder="Wetest API Key"></a-input>
+                </template>
+            </a-setting-list-item>
+        </template>
     </a-collapse-panel>
 </a-collapse>
 {{end}}

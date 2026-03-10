@@ -89,6 +89,9 @@ type AllSetting struct {
 	ClashNoPort       bool   `json:"clashNoPort" form:"clashNoPort"`             // Hide port in subscription URL
 	ClashLowSpeedLine bool   `json:"clashLowSpeedLine" form:"clashLowSpeedLine"` // Enable low-speed direct line nodes
 	ClashXcdnEnabled  bool   `json:"clashXcdnEnabled" form:"clashXcdnEnabled"`   // Enable xcdn three-network optimization nodes
+	AliyunAk          string `json:"aliyunAk" form:"aliyunAk"`                   // Aliyun AccessKey ID
+	AliyunSk          string `json:"aliyunSk" form:"aliyunSk"`                   // Aliyun AccessKey Secret
+	WetestApiKey      string `json:"wetestApiKey" form:"wetestApiKey"`           // Wetest API Key
 	ClashCustomRules  string `json:"clashCustomRules" form:"clashCustomRules"`   // Custom Clash rules
 
 	// LDAP settings
