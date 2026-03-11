@@ -427,20 +427,6 @@ func (s *ClashService) generateRuleProviders(origin string) map[string]ClashRule
 			Path:     "./ruleset/private.yaml",
 			Interval: 86400,
 		},
-		"gfw": {
-			Type:     "http",
-			Behavior: "domain",
-			URL:      fmt.Sprintf("%s/rules/gfw", origin),
-			Path:     "./ruleset/gfw.yaml",
-			Interval: 86400,
-		},
-		"tld-not-cn": {
-			Type:     "http",
-			Behavior: "domain",
-			URL:      fmt.Sprintf("%s/rules/tld-not-cn", origin),
-			Path:     "./ruleset/tld-not-cn.yaml",
-			Interval: 86400,
-		},
 		"telegramcidr": {
 			Type:     "http",
 			Behavior: "ipcidr",
@@ -598,12 +584,6 @@ func (s *ClashService) getRuleURLs(ruleType string) []string {
 		},
 		"private": {
 			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/private.txt",
-		},
-		"gfw": {
-			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/gfw.txt",
-		},
-		"tld-not-cn": {
-			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/tld-not-cn.txt",
 		},
 		"telegramcidr": {
 			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/telegramcidr.txt",
