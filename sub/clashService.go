@@ -331,7 +331,7 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, o
 		})
 	}
 
-	// 2. 按排序后的顺序创建 load-balance 组和 url-test 单节点组
+	// 2. 按排序后的顺序创建 load-balance 组
 	for _, groupName := range orderedGroupNames {
 		proxies, ok := proxiesMap[groupName]
 		if !ok {
@@ -352,19 +352,8 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, o
 			Strategy: "round-robin", // 显式设置为 round-robin
 		})
 
-		// 创建对应的 url-test 单节点组
-		singleNodeGroupName := groupName + " 单节点"
-		groups = append(groups, ClashProxyGroup{
-			Name:     singleNodeGroupName,
-			Type:     "url-test",
-			Proxies:  proxyNames,
-			URL:      "http://cp.cloudflare.com/generate_204",
-			Interval: 300,
-		})
-
-		// load-balance 组和单节点组都加入手动切换
+		// load-balance 组加入手动切换
 		topLevelProxies = append(topLevelProxies, groupName)
-		topLevelProxies = append(topLevelProxies, singleNodeGroupName)
 	}
 
 	// 如果存在三网优化节点，将它追加到 "手动切换" 的最后面
