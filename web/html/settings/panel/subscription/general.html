@@ -190,7 +190,7 @@ DOMAIN,api.example.com,DIRECT" style="font-family: monospace; width: 100%"></a-t
         </a-setting-list-item>
         <a-setting-list-item paddings="small">
             <template #title>启用三网优化节点 (xcdn)</template>
-            <template #description>开启后会在生成的配置文件中为每个节点额外生成带 x 前缀的三网优化节点并放置在 "⚡ 三网优化节点"组中。此功能开启后支持根据 Wetest 优选 IP 自动更新阿里云 DNS 解析。</template>
+            <template #description>开启后会在生成的配置文件中为每个节点组额外生成一个带 x 前缀的节点（命名为 "组名 ⚡ 三网优选"）并优先放置在对应的负载均衡组内。同时支持根据 Wetest 优选 IP 自动更新阿里云 DNS 解析。</template>
             <template #control>
                 <a-switch v-model="allSetting.clashXcdnEnabled"></a-switch>
             </template>

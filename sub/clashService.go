@@ -156,12 +156,11 @@ func (s *ClashService) generateCDNProxies(baseNodes []*model.Inbound, cdnDomain 
 			}
 
 			if xcdnProxy.Name != "" {
-				// 将 xcdn 节点也加到全部节点列表里以供输出，但不跟普通的在一起（如果想放普通组里也可以）
-				// 根据需求"这些节点放到一个select的组，叫三网优化节点"
-				// 为了最终的 `allProxies` 展平输出，这里也需要将这些节点保存下来
-				// 我们创建一个专用的 "xcdn" 内部组名来存放所有的 xcdnProxy
-				xcdnGroupKey := "__xcdn__"
-				proxiesMap[xcdnGroupKey] = append(proxiesMap[xcdnGroupKey], xcdnProxy)
+				// 将名字改为主节点相同名字 + ⚡ 三网优选
+				xcdnProxy.Name = groupName + " ⚡ 三网优选"
+
+				// 放到负载均衡组内，并在稍后排到前面
+				proxiesMap[groupName] = append([]ClashProxy{xcdnProxy}, proxiesMap[groupName]...)
 				xcdnProxyNames = append(xcdnProxyNames, xcdnProxy.Name)
 			}
 		}
@@ -320,15 +319,9 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, o
 	// 手动切换组的 Proxies 列表
 	var topLevelProxies []string
 
-	// 如果有 xcdn 节点，创建一个 "⚡ 三网优化节点" 组
-	var optimizationGroupName string
+	// 如果有 xcdn 节点，把它们放在最前面
 	if len(xcdnProxyNames) > 0 {
-		optimizationGroupName = "⚡ 三网优化节点"
-		groups = append(groups, ClashProxyGroup{
-			Name:    optimizationGroupName,
-			Type:    "select",
-			Proxies: xcdnProxyNames,
-		})
+		topLevelProxies = append(topLevelProxies, xcdnProxyNames...)
 	}
 
 	// 2. 按排序后的顺序创建 load-balance 组
@@ -354,11 +347,6 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, o
 
 		// load-balance 组加入手动切换
 		topLevelProxies = append(topLevelProxies, groupName)
-	}
-
-	// 如果存在三网优化节点，将它追加到 "手动切换" 的最后面
-	if optimizationGroupName != "" {
-		topLevelProxies = append(topLevelProxies, optimizationGroupName)
 	}
 
 	// 更新 "手动切换" 组的 proxies
