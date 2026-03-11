@@ -378,18 +378,39 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, o
 // 生成规则提供者
 func (s *ClashService) generateRuleProviders(origin string) map[string]ClashRuleProvider {
 	return map[string]ClashRuleProvider{
+		"reject": {
+			Type:     "http",
+			Behavior: "domain",
+			URL:      fmt.Sprintf("%s/rules/reject", origin),
+			Path:     "./ruleset/reject.yaml",
+			Interval: 86400,
+		},
+		"icloud": {
+			Type:     "http",
+			Behavior: "domain",
+			URL:      fmt.Sprintf("%s/rules/icloud", origin),
+			Path:     "./ruleset/icloud.yaml",
+			Interval: 86400,
+		},
+		"apple": {
+			Type:     "http",
+			Behavior: "domain",
+			URL:      fmt.Sprintf("%s/rules/apple", origin),
+			Path:     "./ruleset/apple.yaml",
+			Interval: 86400,
+		},
+		"google": {
+			Type:     "http",
+			Behavior: "domain",
+			URL:      fmt.Sprintf("%s/rules/google", origin),
+			Path:     "./ruleset/google.yaml",
+			Interval: 86400,
+		},
 		"proxy": {
 			Type:     "http",
 			Behavior: "domain",
 			URL:      fmt.Sprintf("%s/rules/proxy", origin),
 			Path:     "./ruleset/proxy.yaml",
-			Interval: 86400,
-		},
-		"proxyip": {
-			Type:     "http",
-			Behavior: "ipcidr",
-			URL:      fmt.Sprintf("%s/rules/proxyip", origin),
-			Path:     "./ruleset/proxyip.yaml",
 			Interval: 86400,
 		},
 		"direct": {
@@ -399,11 +420,53 @@ func (s *ClashService) generateRuleProviders(origin string) map[string]ClashRule
 			Path:     "./ruleset/direct.yaml",
 			Interval: 86400,
 		},
-		"directip": {
+		"private": {
+			Type:     "http",
+			Behavior: "domain",
+			URL:      fmt.Sprintf("%s/rules/private", origin),
+			Path:     "./ruleset/private.yaml",
+			Interval: 86400,
+		},
+		"gfw": {
+			Type:     "http",
+			Behavior: "domain",
+			URL:      fmt.Sprintf("%s/rules/gfw", origin),
+			Path:     "./ruleset/gfw.yaml",
+			Interval: 86400,
+		},
+		"tld-not-cn": {
+			Type:     "http",
+			Behavior: "domain",
+			URL:      fmt.Sprintf("%s/rules/tld-not-cn", origin),
+			Path:     "./ruleset/tld-not-cn.yaml",
+			Interval: 86400,
+		},
+		"telegramcidr": {
 			Type:     "http",
 			Behavior: "ipcidr",
-			URL:      fmt.Sprintf("%s/rules/directip", origin),
-			Path:     "./ruleset/directip.yaml",
+			URL:      fmt.Sprintf("%s/rules/telegramcidr", origin),
+			Path:     "./ruleset/telegramcidr.yaml",
+			Interval: 86400,
+		},
+		"cncidr": {
+			Type:     "http",
+			Behavior: "ipcidr",
+			URL:      fmt.Sprintf("%s/rules/cncidr", origin),
+			Path:     "./ruleset/cncidr.yaml",
+			Interval: 86400,
+		},
+		"lancidr": {
+			Type:     "http",
+			Behavior: "ipcidr",
+			URL:      fmt.Sprintf("%s/rules/lancidr", origin),
+			Path:     "./ruleset/lancidr.yaml",
+			Interval: 86400,
+		},
+		"applications": {
+			Type:     "http",
+			Behavior: "classical",
+			URL:      fmt.Sprintf("%s/rules/applications", origin),
+			Path:     "./ruleset/applications.yaml",
 			Interval: 86400,
 		},
 	}
@@ -456,10 +519,19 @@ func (s *ClashService) generateRules(customRules string) []string {
 		"IP-CIDR6,fc00::/7,DIRECT,no-resolve",
 		"IP-CIDR6,fe80::/10,DIRECT,no-resolve",
 		"IP-CIDR6,fd00::/8,DIRECT,no-resolve",
-		"RULE-SET,proxyip,🚀 手动切换",
+		"RULE-SET,applications,DIRECT",
+		"DOMAIN,clash.razord.top,DIRECT",
+		"DOMAIN,yacd.haishan.me,DIRECT",
+		"RULE-SET,private,DIRECT",
+		"RULE-SET,reject,REJECT",
+		"RULE-SET,icloud,DIRECT",
+		"RULE-SET,apple,DIRECT",
+		"RULE-SET,google,🚀 手动切换",
 		"RULE-SET,proxy,🚀 手动切换",
-		"RULE-SET,directip,DIRECT",
 		"RULE-SET,direct,DIRECT",
+		"RULE-SET,lancidr,DIRECT",
+		"RULE-SET,cncidr,DIRECT",
+		"RULE-SET,telegramcidr,🚀 手动切换",
 		"GEOIP,LAN,DIRECT",
 		"GEOIP,CN,DIRECT",
 		"MATCH,🎯 兜底规则",
@@ -506,21 +578,44 @@ func (s *ClashService) GetRules(ruleType string) (string, error) {
 // 获取规则 URL
 func (s *ClashService) getRuleURLs(ruleType string) []string {
 	urlGroups := map[string][]string{
+		"reject": {
+			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/reject.txt",
+		},
+		"icloud": {
+			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/icloud.txt",
+		},
+		"apple": {
+			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/apple.txt",
+		},
+		"google": {
+			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/google.txt",
+		},
 		"proxy": {
-			"https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/gfw.txt",
-			"https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/proxy.txt",
+			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/proxy.txt",
 		},
 		"direct": {
-			"https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/direct.txt",
-			"https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/private.txt",
-			"https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/tld-not-cn.txt",
+			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/direct.txt",
 		},
-		"directip": {
-			"https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/lancidr.txt",
-			"https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/cncidr.txt",
+		"private": {
+			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/private.txt",
 		},
-		"proxyip": {
-			"https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/telegramcidr.txt",
+		"gfw": {
+			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/gfw.txt",
+		},
+		"tld-not-cn": {
+			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/tld-not-cn.txt",
+		},
+		"telegramcidr": {
+			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/telegramcidr.txt",
+		},
+		"cncidr": {
+			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/cncidr.txt",
+		},
+		"lancidr": {
+			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/lancidr.txt",
+		},
+		"applications": {
+			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/applications.txt",
 		},
 	}
 
