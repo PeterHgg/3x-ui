@@ -65,9 +65,6 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 
 	ak, _ := j.settingService.GetAliyunAk()
 	sk, _ := j.settingService.GetAliyunSk()
-	if ak == "" || sk == "" {
-		return logs, fmt.Errorf("Aliyun AK/SK not configured")
-	}
 
 	mainDomain, _ := j.settingService.GetClashDomain()
 	if mainDomain == "" {
@@ -100,10 +97,14 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 		"japan.com",
 	}
 	failCount, _ := j.settingService.GetAliyunDnsFailCount()
-	applyWetestFailure := func(err error, statusCode int, rawBody string) error {
-		failCount++
-		_ = j.settingService.UpdateAliyunDnsFailCount(failCount)
-		addLog(fmt.Sprintf("Wetest 连续失败次数: %d/5", failCount))
+	failedThisRun := false
+	applyFailure := func(reason string, err error, statusCode int, rawBody string) error {
+		if !failedThisRun {
+			failCount++
+			failedThisRun = true
+			_ = j.settingService.UpdateAliyunDnsFailCount(failCount)
+		}
+		addLog(fmt.Sprintf("%s，连续失败次数: %d/5", reason, failCount))
 		if rawBody != "" {
 			addLog(fmt.Sprintf("Wetest response (status=%d): %s", statusCode, rawBody))
 		}
@@ -118,13 +119,22 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 		return err
 	}
 
+	if ak == "" || sk == "" {
+		addLog("Aliyun AK/SK 为空，立即切换 CNAME 兜底")
+		err := j.syncCnameFallback(client, mainDomain, recordName, fallbackLine, fallbackTargets, addLog)
+		if err != nil {
+			addLog(fmt.Sprintf("CNAME 兜底失败: %v", err))
+		}
+		return logs, err
+	}
+
 	// 1. Fetch IPs from Wetest
 	addLog("Fetching best IPs from wetest.vip...")
 	ips, statusCode, rawBody, err := j.fetchBestIPs()
 	if err != nil {
 		errMSg := fmt.Sprintf("Failed to fetch IPs: %v", err)
 		addLog(errMSg)
-		return logs, applyWetestFailure(err, statusCode, rawBody)
+		return logs, applyFailure("Wetest 获取 IP 失败", err, statusCode, rawBody)
 	}
 	toIPs := func(list []WetestIP) []string {
 		res := make([]string, 0, len(list))
@@ -157,10 +167,8 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 	if len(ctIPs) == 0 && len(cuIPs) == 0 && len(cmIPs) == 0 {
 		err := fmt.Errorf("wetest returned empty IP list")
 		addLog("No IPs returned from wetest, aborting DNS sync")
-		return logs, applyWetestFailure(err, statusCode, rawBody)
+		return logs, applyFailure("Wetest 返回空列表", err, statusCode, rawBody)
 	}
-
-	_ = j.settingService.UpdateAliyunDnsFailCount(0)
 
 	// 2. Update Aliyun DNS
 	addLog("Updating Aliyun DNS records...")
@@ -184,6 +192,7 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 			existingIPMap[r.Value] = r.RecordId
 		}
 
+		var syncErr error
 		newIPMap := make(map[string]bool)
 		for _, ip := range newIPs {
 			newIPMap[ip] = true
@@ -192,6 +201,9 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 				err := client.AddRecord(mainDomain, recordName, "A", ip, line)
 				if err != nil {
 					addLog(fmt.Sprintf("Error adding %s: %v", ip, err))
+					if syncErr == nil {
+						syncErr = err
+					}
 				}
 			} else {
 				addLog(fmt.Sprintf("Keep record: %s -> %s", line, ip))
@@ -204,22 +216,34 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 				err := client.DeleteRecord(recordId)
 				if err != nil {
 					addLog(fmt.Sprintf("Error deleting %s: %v", ip, err))
+					if syncErr == nil {
+						syncErr = err
+					}
 				}
 			}
 		}
-		return nil
+		return syncErr
 	}
 
+	var syncErr error
 	if err := syncLine("telecom", ctIPs); err != nil {
 		addLog(fmt.Sprintf("Telecom sync error: %v", err))
+		syncErr = err
 	}
 	if err := syncLine("unicom", cuIPs); err != nil {
 		addLog(fmt.Sprintf("Unicom sync error: %v", err))
+		syncErr = err
 	}
 	if err := syncLine("mobile", cmIPs); err != nil {
 		addLog(fmt.Sprintf("Mobile sync error: %v", err))
+		syncErr = err
 	}
 
+	if syncErr != nil {
+		return logs, applyFailure("Aliyun API 同步失败", syncErr, 0, "")
+	}
+
+	_ = j.settingService.UpdateAliyunDnsFailCount(0)
 	addLog("DNS sync completed successfully")
 	return logs, nil
 }
