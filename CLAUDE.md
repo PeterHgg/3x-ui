@@ -9,6 +9,14 @@
 
 ## 协作方式
 - 你是运维而非程序员，不熟悉 diff/review；需要我用易懂的说明代你执行相关步骤。
+- 稳定构建流程（已验证可触发构建）：
+  1) git add <改动文件>
+  2) git commit -m "..."
+  3) git push origin main
+  4) git tag vX.X.X
+  5) git push origin vX.X.X
+  6) 等待 GitHub Actions 触发构建（无需创建 Release）
+- 版本号规范：构建脚本写入的版本号不带前缀 v（页面模板会自动加 v）。
 
 ## 新增功能总结 (对比 MHSanaei/3x-ui 原版)
 
