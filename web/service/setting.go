@@ -109,6 +109,7 @@ var defaultValueMap = map[string]string{
 	"clashXcdnEnabled":  "false",
 	"aliyunAk":          "",
 	"aliyunSk":          "",
+	"aliyunDnsFailCount": "0",
 	"clashCustomRules": `DOMAIN-SUFFIX,szbdyd.com,REJECT
 DOMAIN-SUFFIX,mcdn.bilivideo.com,REJECT
 DOMAIN-SUFFIX,mcdn.bilivideo.cn,REJECT
@@ -768,6 +769,7 @@ func (s *SettingService) GetDefaultSettings(host string) (any, error) {
 		"clashXcdnEnabled":  func() (any, error) { return s.GetClashXcdnEnabled() },
 		"aliyunAk":          func() (any, error) { return s.GetAliyunAk() },
 		"aliyunSk":          func() (any, error) { return s.GetAliyunSk() },
+		"aliyunDnsFailCount": func() (any, error) { return s.GetAliyunDnsFailCount() },
 	}
 
 	result := make(map[string]any)
@@ -906,4 +908,15 @@ func (s *SettingService) GetAliyunSk() (string, error) {
 
 func (s *SettingService) UpdateAliyunSk(sk string) error {
 	return s.setString("aliyunSk", sk)
+}
+
+func (s *SettingService) GetAliyunDnsFailCount() (int, error) {
+	return s.getInt("aliyunDnsFailCount")
+}
+
+func (s *SettingService) UpdateAliyunDnsFailCount(count int) error {
+	if count < 0 {
+		count = 0
+	}
+	return s.setInt("aliyunDnsFailCount", count)
 }
