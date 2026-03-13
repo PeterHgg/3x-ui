@@ -233,6 +233,11 @@ DOMAIN,api.example.com,DIRECT" style="font-family: monospace; width: 100%"></a-t
                         <span v-if="aliyunDnsStatus.lastUpdatedAt" style="margin-left: 8px; color: #999;">
                             更新时间：[[ aliyunDnsStatus.lastUpdatedAt ]]
                         </span>
+                        <div v-if="aliyunDnsStatus.records && aliyunDnsStatus.records.length" style="margin-top: 6px; line-height: 1.6;">
+                            <div v-for="(r, idx) in aliyunDnsStatus.records" :key="idx">
+                                [[ aliyunDnsStatus.recordName ]].[[ aliyunDnsStatus.domain ]] [[ r.line ]] [[ r.value ]] [[ r.updateTimestamp ]]
+                            </div>
+                        </div>
                     </div>
                     <div v-else>暂无记录信息</div>
                 </template>
@@ -241,13 +246,6 @@ DOMAIN,api.example.com,DIRECT" style="font-family: monospace; width: 100%"></a-t
                         <a-alert v-if="aliyunDnsStatusError" type="warning" show-icon :message="aliyunDnsStatusError" style="margin-bottom: 10px;"></a-alert>
                         <a-empty v-else-if="!aliyunDnsStatus || !aliyunDnsStatus.records || aliyunDnsStatus.records.length === 0"
                             description="暂无记录" :style="{ margin: '10px 0' }" />
-                        <a-table v-else :data-source="aliyunDnsStatus.records" :pagination="false" :row-key="(r, idx) => idx"
-                            :scroll="isMobile ? {} : { x: 200 }" bordered size="small">
-                            <a-table-column title="线路" data-index="line" key="line"></a-table-column>
-                            <a-table-column title="类型" data-index="type" key="type"></a-table-column>
-                            <a-table-column title="记录值" data-index="value" key="value"></a-table-column>
-                            <a-table-column title="更新时间" data-index="updateTimestamp" key="updateTimestamp"></a-table-column>
-                        </a-table>
                     </div>
                 </template>
             </a-setting-list-item>
