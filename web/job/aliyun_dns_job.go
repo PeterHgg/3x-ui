@@ -344,13 +344,13 @@ func NewAliyunDNSClient(ak, sk string) *AliyunDNSClient {
 }
 
 type AliyunRecord struct {
-	RecordId        string `json:"RecordId"`
-	RR              string `json:"RR"`
-	Type            string `json:"Type"`
-	Value           string `json:"Value"`
-	Line            string `json:"Line"`
-	UpdateTimestamp string `json:"UpdateTimestamp"`
-	UpdateTime      string `json:"UpdateTime"`
+	RecordId        string      `json:"RecordId"`
+	RR              string      `json:"RR"`
+	Type            string      `json:"Type"`
+	Value           string      `json:"Value"`
+	Line            string      `json:"Line"`
+	UpdateTimestamp json.Number `json:"UpdateTimestamp"`
+	UpdateTime      string      `json:"UpdateTime"`
 }
 
 type AliyunResponse struct {

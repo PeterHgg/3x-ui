@@ -118,7 +118,10 @@ func (a *SettingController) getAliyunDNSStatus(c *gin.Context) {
 
 	var lastUpdatedAt int64
 	for _, r := range records {
-		updateTimestamp := r.UpdateTimestamp
+		updateTimestamp := ""
+		if r.UpdateTimestamp != "" {
+			updateTimestamp = r.UpdateTimestamp.String()
+		}
 		if updateTimestamp == "" {
 			updateTimestamp = r.UpdateTime
 		}
