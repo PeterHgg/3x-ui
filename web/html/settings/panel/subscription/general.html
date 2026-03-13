@@ -217,6 +217,40 @@ DOMAIN,api.example.com,DIRECT" style="font-family: monospace; width: 100%"></a-t
                     <a-button type="primary" @click="updateAliyunDNS">立即更新</a-button>
                 </template>
             </a-setting-list-item>
+            <a-divider>DNS 状态</a-divider>
+            <a-setting-list-item paddings="small">
+                <template #title>刷新状态</template>
+                <template #description>从阿里云获取当前 xcdn 解析记录</template>
+                <template #control>
+                    <a-button type="default" :loading="aliyunDnsStatusLoading" @click="fetchAliyunDNSStatus">刷新状态</a-button>
+                </template>
+            </a-setting-list-item>
+            <a-setting-list-item paddings="small">
+                <template #title>解析记录</template>
+                <template #description>
+                    <div v-if="aliyunDnsStatus && aliyunDnsStatus.domain">
+                        记录：[[ aliyunDnsStatus.recordName ]].[[ aliyunDnsStatus.domain ]]
+                        <span v-if="aliyunDnsStatus.lastUpdatedAt" style="margin-left: 8px; color: #999;">
+                            更新时间：[[ aliyunDnsStatus.lastUpdatedAt ]]
+                        </span>
+                    </div>
+                    <div v-else>暂无记录信息</div>
+                </template>
+                <template #control>
+                    <div style="width: 100%;">
+                        <a-alert v-if="aliyunDnsStatusError" type="warning" show-icon :message="aliyunDnsStatusError" style="margin-bottom: 10px;"></a-alert>
+                        <a-empty v-else-if="!aliyunDnsStatus || !aliyunDnsStatus.records || aliyunDnsStatus.records.length === 0"
+                            description="暂无记录" :style="{ margin: '10px 0' }" />
+                        <a-table v-else :data-source="aliyunDnsStatus.records" :pagination="false" :row-key="(r, idx) => idx"
+                            :scroll="isMobile ? {} : { x: 200 }" bordered size="small">
+                            <a-table-column title="线路" data-index="line" key="line"></a-table-column>
+                            <a-table-column title="类型" data-index="type" key="type"></a-table-column>
+                            <a-table-column title="记录值" data-index="value" key="value"></a-table-column>
+                            <a-table-column title="更新时间" data-index="updateTimestamp" key="updateTimestamp"></a-table-column>
+                        </a-table>
+                    </div>
+                </template>
+            </a-setting-list-item>
         </template>
     </a-collapse-panel>
 </a-collapse>

@@ -2,7 +2,7 @@ package controller
 
 import (
 	"errors"
-	"time"
+	"strconv"
 
 	"github.com/mhsanaei/3x-ui/v2/util/crypto"
 	"github.com/mhsanaei/3x-ui/v2/web/entity"
@@ -45,6 +45,7 @@ func (a *SettingController) initRouter(g *gin.RouterGroup) {
 	g.POST("/updateUser", a.updateUser)
 	g.POST("/restartPanel", a.restartPanel)
 	g.POST("/updateAliyunDNS", a.updateAliyunDNS)
+	g.GET("/aliyunDNSStatus", a.getAliyunDNSStatus)
 	g.GET("/getDefaultJsonConfig", a.getDefaultXrayConfig)
 }
 
@@ -56,6 +57,90 @@ func (a *SettingController) updateAliyunDNS(c *gin.Context) {
 	} else {
 		jsonObj(c, logs, nil)
 	}
+}
+
+type aliyunDNSStatusItem struct {
+	Line            string `json:"line"`
+	Type            string `json:"type"`
+	Value           string `json:"value"`
+	UpdateTimestamp string `json:"updateTimestamp"`
+}
+
+type aliyunDNSStatusResponse struct {
+	Domain        string                `json:"domain"`
+	RecordName    string                `json:"recordName"`
+	LastUpdatedAt string                `json:"lastUpdatedAt"`
+	Records       []aliyunDNSStatusItem `json:"records"`
+}
+
+func (a *SettingController) getAliyunDNSStatus(c *gin.Context) {
+	enabled, _ := a.settingService.GetClashXcdnEnabled()
+	if !enabled {
+		jsonMsg(c, "XCDN 未启用", errors.New("XCDN not enabled"))
+		return
+	}
+
+	ak, _ := a.settingService.GetAliyunAk()
+	sk, _ := a.settingService.GetAliyunSk()
+	if ak == "" || sk == "" {
+		jsonMsg(c, "Aliyun AK/SK 未配置，无法查询", errors.New("aliyun credentials missing"))
+		return
+	}
+
+	mainDomain, _ := a.settingService.GetClashDomain()
+	if mainDomain == "" {
+		mainDomain, _ = a.settingService.GetSubDomain()
+	}
+	if mainDomain == "" {
+		jsonMsg(c, "Clash 域名未配置", errors.New("clash domain not configured"))
+		return
+	}
+
+	prefix, _ := a.settingService.GetClashPrefix()
+	if prefix == "" {
+		prefix = "cdn"
+	}
+	recordName := "x" + prefix
+
+	client := job.NewAliyunDNSClient(ak, sk)
+	records, err := client.GetRecords(mainDomain, recordName, "")
+	if err != nil {
+		jsonMsg(c, "获取 Aliyun DNS 记录失败", err)
+		return
+	}
+
+	resp := aliyunDNSStatusResponse{
+		Domain:     mainDomain,
+		RecordName: recordName,
+		Records:    make([]aliyunDNSStatusItem, 0, len(records)),
+	}
+
+	var lastUpdatedAt int64
+	for _, r := range records {
+		updateTimestamp := r.UpdateTimestamp
+		if updateTimestamp == "" {
+			updateTimestamp = r.UpdateTime
+		}
+		if updateTimestamp != "" {
+			if ts, err := strconv.ParseInt(updateTimestamp, 10, 64); err == nil {
+				if ts > lastUpdatedAt {
+					lastUpdatedAt = ts
+				}
+			}
+		}
+		resp.Records = append(resp.Records, aliyunDNSStatusItem{
+			Line:            r.Line,
+			Type:            r.Type,
+			Value:           r.Value,
+			UpdateTimestamp: updateTimestamp,
+		})
+	}
+
+	if lastUpdatedAt > 0 {
+		resp.LastUpdatedAt = strconv.FormatInt(lastUpdatedAt, 10)
+	}
+
+	jsonObj(c, resp, nil)
 }
 
 // getAllSetting retrieves all current settings.

@@ -344,9 +344,13 @@ func NewAliyunDNSClient(ak, sk string) *AliyunDNSClient {
 }
 
 type AliyunRecord struct {
-	RecordId string `json:"RecordId"`
-	Value    string `json:"Value"`
-	Line     string `json:"Line"`
+	RecordId        string `json:"RecordId"`
+	RR              string `json:"RR"`
+	Type            string `json:"Type"`
+	Value           string `json:"Value"`
+	Line            string `json:"Line"`
+	UpdateTimestamp string `json:"UpdateTimestamp"`
+	UpdateTime      string `json:"UpdateTime"`
 }
 
 type AliyunResponse struct {
@@ -412,7 +416,9 @@ func (c *AliyunDNSClient) GetRecords(domain, record, line string) ([]AliyunRecor
 	params.Set("Action", "DescribeDomainRecords")
 	params.Set("DomainName", domain)
 	params.Set("RRKeyWord", record)
-	params.Set("Line", line)
+	if line != "" {
+		params.Set("Line", line)
+	}
 
 	data, err := c.doRequest(params)
 	if err != nil {
@@ -431,9 +437,13 @@ func (c *AliyunDNSClient) GetRecords(domain, record, line string) ([]AliyunRecor
 
 	var results []AliyunRecord
 	for _, r := range resp.DomainRecords.Record {
-		if r.Line == line && r.Value != "" {
-			results = append(results, r)
+		if r.Value == "" {
+			continue
 		}
+		if line != "" && r.Line != line {
+			continue
+		}
+		results = append(results, r)
 	}
 	return results, nil
 }

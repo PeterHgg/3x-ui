@@ -143,6 +143,9 @@
       syncLogs: [],
       syncLogVisible: false,
       syncLoading: false,
+      aliyunDnsStatus: null,
+      aliyunDnsStatusError: "",
+      aliyunDnsStatusLoading: false,
       user: {},
       lang: LanguageManager.getLanguage(),
       inboundOptions: [],
@@ -411,6 +414,40 @@
           this.syncLogs.push(`[ERROR] Request failed: ${e.message}`);
         } finally {
           this.syncLoading = false;
+        }
+      },
+      formatUnixMs(ts) {
+        if (!ts) return "";
+        const num = Number(ts);
+        if (Number.isNaN(num)) return ts;
+        const d = new Date(num);
+        return Number.isNaN(d.getTime()) ? ts : d.toLocaleString();
+      },
+      async fetchAliyunDNSStatus() {
+        this.aliyunDnsStatusError = "";
+        this.aliyunDnsStatusLoading = true;
+        try {
+          const msg = await HttpUtil.get("/panel/setting/aliyunDNSStatus");
+          if (msg.success) {
+            this.aliyunDnsStatus = msg.obj || null;
+            if (this.aliyunDnsStatus?.lastUpdatedAt) {
+              this.aliyunDnsStatus.lastUpdatedAt = this.formatUnixMs(this.aliyunDnsStatus.lastUpdatedAt);
+            }
+            if (this.aliyunDnsStatus?.records) {
+              this.aliyunDnsStatus.records = this.aliyunDnsStatus.records.map(r => ({
+                ...r,
+                updateTimestamp: this.formatUnixMs(r.updateTimestamp)
+              }));
+            }
+          } else {
+            this.aliyunDnsStatus = null;
+            this.aliyunDnsStatusError = msg.msg || "";
+          }
+        } catch (e) {
+          this.aliyunDnsStatus = null;
+          this.aliyunDnsStatusError = e.message || "";
+        } finally {
+          this.aliyunDnsStatusLoading = false;
         }
       },
       toggleTwoFactor(newValue) {
