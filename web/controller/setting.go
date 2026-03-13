@@ -164,6 +164,14 @@ func (a *SettingController) getAliyunDNSStatus(c *gin.Context) {
 			filtered = append(filtered, r)
 		}
 	}
+	if len(filtered) == 0 {
+		filtered = make([]aliyunDNSStatusItem, 0, len(resp.Records))
+		for _, r := range resp.Records {
+			if r.Value != "" {
+				filtered = append(filtered, r)
+			}
+		}
+	}
 	if len(filtered) > 0 {
 		resp.Records = filtered
 	}
