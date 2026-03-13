@@ -3,6 +3,7 @@ package controller
 import (
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mhsanaei/3x-ui/v2/util/crypto"
@@ -109,6 +110,20 @@ func (a *SettingController) getAliyunDNSStatus(c *gin.Context) {
 		jsonMsg(c, "获取 Aliyun DNS 记录失败", err)
 		return
 	}
+	if len(records) == 0 {
+		records, err = client.GetRecords(mainDomain, prefix, "")
+		if err != nil {
+			jsonMsg(c, "获取 Aliyun DNS 记录失败", err)
+			return
+		}
+	}
+	if len(records) == 0 {
+		records, err = client.GetRecords(mainDomain, "", "")
+		if err != nil {
+			jsonMsg(c, "获取 Aliyun DNS 记录失败", err)
+			return
+		}
+	}
 
 	resp := aliyunDNSStatusResponse{
 		Domain:     mainDomain,
@@ -138,6 +153,19 @@ func (a *SettingController) getAliyunDNSStatus(c *gin.Context) {
 			Value:           r.Value,
 			UpdateTimestamp: updateTimestamp,
 		})
+	}
+
+	filtered := make([]aliyunDNSStatusItem, 0, len(resp.Records))
+	for _, r := range resp.Records {
+		if r.Value == "" {
+			continue
+		}
+		if strings.HasPrefix(strings.ToLower(r.Value), "x") {
+			filtered = append(filtered, r)
+		}
+	}
+	if len(filtered) > 0 {
+		resp.Records = filtered
 	}
 
 	if lastUpdatedAt > 0 {
