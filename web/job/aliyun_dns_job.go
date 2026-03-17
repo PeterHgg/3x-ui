@@ -82,6 +82,11 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 
 	addLog(fmt.Sprintf("Starting DNS sync for %s.%s", recordName, mainDomain))
 
+	if ak == "" || sk == "" {
+		addLog("Aliyun AK/SK 为空，跳过 CNAME 兜底")
+		return logs, fmt.Errorf("Aliyun AK/SK 未配置")
+	}
+
 	client := NewAliyunDNSClient(ak, sk)
 	fallbackLine := "中国地区"
 	fallbackTargets := []string{
@@ -96,6 +101,29 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 		"icook.hk",
 		"japan.com",
 	}
+	currentRecords, err := client.GetRecords(mainDomain, recordName, "")
+	if err != nil {
+		addLog(fmt.Sprintf("获取当前 DNS 记录失败: %v", err))
+		return logs, err
+	}
+
+	hasARecord := false
+	for _, r := range currentRecords {
+		if strings.EqualFold(r.Type, "A") {
+			hasARecord = true
+			break
+		}
+	}
+	if !hasARecord {
+		addLog("当前无 A 记录，直接写入 CNAME 兜底解析")
+		if err := j.syncCnameFallback(client, mainDomain, recordName, fallbackLine, fallbackTargets, addLog); err != nil {
+			addLog(fmt.Sprintf("CNAME 兜底失败: %v", err))
+			return logs, err
+		}
+		addLog("CNAME 兜底完成")
+		return logs, nil
+	}
+
 	failCount, _ := j.settingService.GetAliyunDnsFailCount()
 	failedThisRun := false
 	applyFailure := func(reason string, err error, statusCode int, rawBody string) error {
@@ -117,15 +145,6 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 			addLog("CNAME 兜底完成")
 		}
 		return err
-	}
-
-	if ak == "" || sk == "" {
-		addLog("Aliyun AK/SK 为空，立即切换 CNAME 兜底")
-		err := j.syncCnameFallback(client, mainDomain, recordName, fallbackLine, fallbackTargets, addLog)
-		if err != nil {
-			addLog(fmt.Sprintf("CNAME 兜底失败: %v", err))
-		}
-		return logs, err
 	}
 
 	// 1. Fetch IPs from Wetest
