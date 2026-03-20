@@ -84,12 +84,12 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 	addLog(fmt.Sprintf("Starting DNS sync for %s.%s", recordName, mainDomain))
 
 	if ak == "" || sk == "" {
-		addLog("Aliyun AK/SK 为空，跳过 CNAME 兜底")
+		addLog("Aliyun AK/SK 为空，触发兜底条件但无法执行 DNS 写入")
 		return logs, fmt.Errorf("Aliyun AK/SK 未配置")
 	}
 
 	client := NewAliyunDNSClient(ak, sk)
-	fallbackLine := "中国地区"
+	fallbackLine := "default"
 	fallbackTargets := []string{
 		"www.visa.com",
 		"singapore.com",
@@ -102,27 +102,14 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 		"icook.hk",
 		"japan.com",
 	}
-	currentRecords, err := client.GetRecords(mainDomain, recordName, "")
-	if err != nil {
-		addLog(fmt.Sprintf("获取当前 DNS 记录失败: %v", err))
-		return logs, err
-	}
-
-	hasARecord := false
-	for _, r := range currentRecords {
-		if strings.EqualFold(r.Type, "A") {
-			hasARecord = true
-			break
-		}
-	}
-	if !hasARecord {
-		addLog("当前无 A 记录，直接写入 CNAME 兜底解析")
-		if err := j.syncCnameFallback(client, mainDomain, recordName, fallbackLine, fallbackTargets, addLog); err != nil {
-			addLog(fmt.Sprintf("CNAME 兜底失败: %v", err))
-			return logs, err
+	if _, err := client.GetRecords(mainDomain, recordName, ""); err != nil {
+		addLog(fmt.Sprintf("获取当前 DNS 记录失败，尝试 CNAME 兜底: %v", err))
+		if fallbackErr := j.syncCnameFallback(client, mainDomain, recordName, fallbackLine, fallbackTargets, addLog); fallbackErr != nil {
+			addLog(fmt.Sprintf("CNAME 兜底失败: %v", fallbackErr))
+			return logs, fallbackErr
 		}
 		addLog("CNAME 兜底完成")
-		return logs, nil
+		return logs, err
 	}
 
 	failCount, _ := j.settingService.GetAliyunDnsFailCount()
@@ -270,7 +257,7 @@ func (j *AliyunDNSJob) syncCnameFallback(client *AliyunDNSClient, domain, record
 		return nil
 	}
 
-	existingRecords, err := client.GetRecords(domain, recordName, line)
+	existingRecords, err := client.GetRecords(domain, recordName, "")
 	if err != nil {
 		return err
 	}
@@ -280,26 +267,37 @@ func (j *AliyunDNSJob) syncCnameFallback(client *AliyunDNSClient, domain, record
 		keepMap[target] = true
 	}
 
-	existingMap := make(map[string]string)
+	existingTargetMap := make(map[string]bool)
 	for _, r := range existingRecords {
 		if r.Value == "" {
 			continue
 		}
-		existingMap[r.Value] = r.RecordId
-		if !keepMap[r.Value] {
-			addLog(fmt.Sprintf("Deleting old record: %s -> %s", line, r.Value))
+
+		if strings.EqualFold(r.Type, "A") {
+			addLog(fmt.Sprintf("Deleting A record: %s -> %s (%s)", r.Line, r.Value, r.RecordId))
 			if err := client.DeleteRecord(r.RecordId); err != nil {
-				addLog(fmt.Sprintf("Error deleting %s: %v", r.Value, err))
+				addLog(fmt.Sprintf("Error deleting A record %s: %v", r.Value, err))
 			}
+			continue
+		}
+
+		if strings.EqualFold(r.Type, "CNAME") && r.Line == line && keepMap[r.Value] {
+			existingTargetMap[r.Value] = true
+			addLog(fmt.Sprintf("Keep CNAME record: %s -> %s", line, r.Value))
+			continue
+		}
+
+		addLog(fmt.Sprintf("Deleting old record: %s %s -> %s", r.Line, r.Type, r.Value))
+		if err := client.DeleteRecord(r.RecordId); err != nil {
+			addLog(fmt.Sprintf("Error deleting %s: %v", r.Value, err))
 		}
 	}
 
 	for _, target := range targets {
-		if _, exists := existingMap[target]; exists {
-			addLog(fmt.Sprintf("Keep record: %s -> %s", line, target))
+		if existingTargetMap[target] {
 			continue
 		}
-		addLog(fmt.Sprintf("Adding record: %s -> %s", line, target))
+		addLog(fmt.Sprintf("Adding CNAME record: %s -> %s", line, target))
 		if err := client.AddRecord(domain, recordName, "CNAME", target, line); err != nil {
 			addLog(fmt.Sprintf("Error adding %s: %v", target, err))
 		}
