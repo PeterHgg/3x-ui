@@ -1,6 +1,8 @@
 package job
 
 import (
+	"sync/atomic"
+
 	"github.com/mhsanaei/3x-ui/v2/database"
 	"github.com/mhsanaei/3x-ui/v2/database/model"
 	"github.com/mhsanaei/3x-ui/v2/logger"
@@ -13,6 +15,8 @@ type PeriodicSyncJob struct {
 	inboundService service.InboundService
 }
 
+var periodicSyncRunning int32
+
 // NewPeriodicSyncJob creates a new periodic sync job.
 func NewPeriodicSyncJob() *PeriodicSyncJob {
 	return &PeriodicSyncJob{}
@@ -20,6 +24,12 @@ func NewPeriodicSyncJob() *PeriodicSyncJob {
 
 // Run syncs all slave inbounds (those with SyncSourceId > 0) from their source.
 func (j *PeriodicSyncJob) Run() {
+	if !atomic.CompareAndSwapInt32(&periodicSyncRunning, 0, 1) {
+		logger.Warning("PeriodicSyncJob: previous run still in progress, skipping this cycle")
+		return
+	}
+	defer atomic.StoreInt32(&periodicSyncRunning, 0)
+
 	db := database.GetDB()
 	var slaveInbounds []*model.Inbound
 	err := db.Where("sync_source_id > 0").Find(&slaveInbounds).Error

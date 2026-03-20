@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -134,7 +135,7 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 		}
 		addLog(fmt.Sprintf("%s，连续失败次数: %d/5", reason, failCount))
 		if rawBody != "" {
-			addLog(fmt.Sprintf("Wetest response (status=%d): %s", statusCode, rawBody))
+			addLog(fmt.Sprintf("Wetest response status=%d, body_len=%d", statusCode, len(rawBody)))
 		}
 		if failCount >= 5 {
 			addLog("连续失败达到阈值，切换 CNAME 兜底")
@@ -177,12 +178,9 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 	cuIPs := pickIPs(ips.Data.CU, ips.Data.Cu, ips.Info.CU, ips.Info.Cu)
 	cmIPs := pickIPs(ips.Data.CM, ips.Data.Cm, ips.Info.CM, ips.Info.Cm)
 
-	addLog(fmt.Sprintf("Wetest response (status=%d): %s", statusCode, rawBody))
-	addLog(fmt.Sprintf("Fetched IPs - Telecom: %d, Unicom: %d, Mobile: %d",
+	addLog(fmt.Sprintf("Wetest response (status=%d), body_len=%d", statusCode, len(rawBody)))
+	addLog(fmt.Sprintf("Fetched IP count - Telecom: %d, Unicom: %d, Mobile: %d",
 		len(ctIPs), len(cuIPs), len(cmIPs)))
-	addLog(fmt.Sprintf("Telecom IPs: %v", ctIPs))
-	addLog(fmt.Sprintf("Unicom IPs: %v", cuIPs))
-	addLog(fmt.Sprintf("Mobile IPs: %v", cmIPs))
 	if len(ctIPs) == 0 && len(cuIPs) == 0 && len(cmIPs) == 0 {
 		err := fmt.Errorf("wetest returned empty IP list")
 		addLog("No IPs returned from wetest, aborting DNS sync")
@@ -312,7 +310,8 @@ func (j *AliyunDNSJob) syncCnameFallback(client *AliyunDNSClient, domain, record
 
 func (j *AliyunDNSJob) fetchBestIPs() (*WetestResponse, int, string, error) {
 	apiUrl := "https://www.wetest.vip/api/cf2dns/get_cloudflare_ip?key=o1zrmHAF&type=v4"
-	resp, err := http.Get(apiUrl)
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+	resp, err := httpClient.Get(apiUrl)
 	if err != nil {
 		return nil, 0, "", err
 	}
@@ -354,12 +353,22 @@ func (j *AliyunDNSJob) fetchBestIPs() (*WetestResponse, int, string, error) {
 }
 
 type AliyunDNSClient struct {
-	ak string
-	sk string
+	ak         string
+	sk         string
+	httpClient *http.Client
 }
 
 func NewAliyunDNSClient(ak, sk string) *AliyunDNSClient {
-	return &AliyunDNSClient{ak: ak, sk: sk}
+	return &AliyunDNSClient{
+		ak: ak,
+		sk: sk,
+		httpClient: &http.Client{
+			Timeout: 10 * time.Second,
+			Transport: &http.Transport{
+				DialContext: (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
+			},
+		},
+	}
 }
 
 type AliyunRecord struct {
@@ -421,7 +430,7 @@ func (c *AliyunDNSClient) doRequest(params url.Values) ([]byte, error) {
 	params.Set("Signature", signature)
 
 	url := "https://alidns.aliyuncs.com/?" + params.Encode()
-	resp, err := http.Get(url)
+	resp, err := c.httpClient.Get(url)
 	if err != nil {
 		return nil, err
 	}
