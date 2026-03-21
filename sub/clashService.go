@@ -78,7 +78,7 @@ func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, cou
 		MixedPort:          7890,
 		AllowLan:           true,
 		Mode:               "rule",
-		LogLevel:           "info",
+		LogLevel:           "error",
 		ExternalController: ":9090",
 		UnifiedDelay:       true,
 		TCPConcurrent:      true,
@@ -422,13 +422,6 @@ func (s *ClashService) generateRuleProviders(origin string) map[string]ClashRule
 			Path:     "./ruleset/telegramcidr.yaml",
 			Interval: 86400,
 		},
-		"cncidr": {
-			Type:     "http",
-			Behavior: "ipcidr",
-			URL:      fmt.Sprintf("%s/rules/cncidr", origin),
-			Path:     "./ruleset/cncidr.yaml",
-			Interval: 86400,
-		},
 		"lancidr": {
 			Type:     "http",
 			Behavior: "ipcidr",
@@ -504,10 +497,9 @@ func (s *ClashService) generateRules(customRules string) []string {
 		"RULE-SET,proxy,🚀 手动切换",
 		"RULE-SET,direct,DIRECT",
 		"RULE-SET,lancidr,DIRECT",
-		"RULE-SET,cncidr,DIRECT",
 		"RULE-SET,telegramcidr,🚀 手动切换",
 		"GEOIP,LAN,DIRECT",
-		"GEOIP,CN,DIRECT",
+		"GEOIP,CN,DIRECT,no-resolve",
 		"MATCH,🎯 兜底规则",
 	)
 
@@ -575,9 +567,6 @@ func (s *ClashService) getRuleURLs(ruleType string) []string {
 		},
 		"telegramcidr": {
 			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/telegramcidr.txt",
-		},
-		"cncidr": {
-			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/cncidr.txt",
 		},
 		"lancidr": {
 			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/lancidr.txt",
