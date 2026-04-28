@@ -174,21 +174,20 @@
             </template>
         </a-setting-list-item>
         <a-setting-list-item paddings="small">
-            <template #title>自定义规则（追加模式）</template>
-            <template #description>每行一条，会插入在 Cloudflare IP 直连规则之后、基础规则之前；如果下方“完整 Rules”有内容，这里会被忽略</template>
+            <template #title>Rule 配置（可编辑，合并）</template>
+            <template #description>一个输入框统一编辑 rule-providers 和 rules；保存时会自动拆分并同步到订阅配置</template>
             <template #control>
-                <a-textarea v-model="allSetting.clashCustomRules" :rows="10" @input="fetchClashRulePreview" placeholder="DOMAIN-SUFFIX,example.com,🚀 手动切换
-DOMAIN,api.example.com,DIRECT" style="font-family: monospace; width: 100%"></a-textarea>
-            </template>
-        </a-setting-list-item>
-        <a-setting-list-item paddings="small">
-            <template #title>当前 Rule 配置预览</template>
-            <template #description>展示当前会下发到 Clash 配置文件里的 rule-providers 和 rules；修改“自定义规则”后可点击刷新同步查看</template>
-            <template #control>
-                <a-space direction="vertical" :style="{ width: '100%' }">
-                    <a-button type="default" size="small" :loading="clashRulePreviewLoading" @click="fetchClashRulePreview">刷新 Rule 预览</a-button>
-                    <a-textarea :value="clashRulePreview" :rows="16" readonly style="font-family: monospace; width: 100%"></a-textarea>
-                </a-space>
+                <a-textarea v-model="clashRuleMerged" :rows="20" placeholder="rule-providers:
+  reject:
+    type: http
+    behavior: domain
+    url: 'https://example.com/rules/reject'
+    path: ./ruleset/reject.yaml
+    interval: 86400
+
+rules:
+  - 'RULE-SET,reject,REJECT'
+  - 'MATCH,🎯 兜底规则'" style="font-family: monospace; width: 100%"></a-textarea>
             </template>
         </a-setting-list-item>
         <a-setting-list-item paddings="small">
