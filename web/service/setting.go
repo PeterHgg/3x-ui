@@ -100,15 +100,15 @@ var defaultValueMap = map[string]string{
 	"ldapDefaultExpiryDays": "0",
 	"ldapDefaultLimitIP":    "0",
 	// Clash subscription defaults
-	"clashDomain":       "",
-	"clashSubDomain":    "",
-	"clashPrefix":       "",
-	"clashCount":        "0",
-	"clashNoPort":       "false",
-	"clashLowSpeedLine": "false",
-	"clashXcdnEnabled":  "false",
-	"aliyunAk":          "",
-	"aliyunSk":          "",
+	"clashDomain":        "",
+	"clashSubDomain":     "",
+	"clashPrefix":        "",
+	"clashCount":         "0",
+	"clashNoPort":        "false",
+	"clashLowSpeedLine":  "false",
+	"clashXcdnEnabled":   "false",
+	"aliyunAk":           "",
+	"aliyunSk":           "",
 	"aliyunDnsFailCount": "0",
 	"clashCustomRules": `DOMAIN-SUFFIX,szbdyd.com,REJECT
 DOMAIN-SUFFIX,mcdn.bilivideo.com,REJECT
@@ -134,6 +134,8 @@ DOMAIN-SUFFIX,steamcontent.com,🚀 手动切换
 DOMAIN-SUFFIX,steamstatic.com,DIRECT
 DOMAIN-SUFFIX,steamcdn-a.akamaihd.net,DIRECT
 DOMAIN-SUFFIX,steamstat.us,DIRECT`,
+	"clashRuleProviders": "",
+	"clashRules":         "",
 }
 
 // SettingService provides business logic for application settings management.
@@ -745,30 +747,32 @@ func (s *SettingService) GetDefaultXrayConfig() (any, error) {
 func (s *SettingService) GetDefaultSettings(host string) (any, error) {
 	type settingFunc func() (any, error)
 	settings := map[string]settingFunc{
-		"expireDiff":        func() (any, error) { return s.GetExpireDiff() },
-		"trafficDiff":       func() (any, error) { return s.GetTrafficDiff() },
-		"pageSize":          func() (any, error) { return s.GetPageSize() },
-		"defaultCert":       func() (any, error) { return s.GetCertFile() },
-		"defaultKey":        func() (any, error) { return s.GetKeyFile() },
-		"tgBotEnable":       func() (any, error) { return s.GetTgbotEnabled() },
-		"subEnable":         func() (any, error) { return s.GetSubEnable() },
-		"subJsonEnable":     func() (any, error) { return s.GetSubJsonEnable() },
-		"subTitle":          func() (any, error) { return s.GetSubTitle() },
-		"subURI":            func() (any, error) { return s.GetSubURI() },
-		"subJsonURI":        func() (any, error) { return s.GetSubJsonURI() },
-		"remarkModel":       func() (any, error) { return s.GetRemarkModel() },
-		"datepicker":        func() (any, error) { return s.GetDatepicker() },
-		"ipLimitEnable":     func() (any, error) { return s.GetIpLimitEnable() },
-		"clashDomain":       func() (any, error) { return s.GetClashDomain() },
-		"clashSubDomain":    func() (any, error) { return s.GetClashSubDomain() },
-		"clashPrefix":       func() (any, error) { return s.GetClashPrefix() },
-		"clashCount":        func() (any, error) { return s.GetClashCount() },
-		"clashNoPort":       func() (any, error) { return s.GetClashNoPort() },
-		"clashCustomRules":  func() (any, error) { return s.GetClashCustomRules() },
-		"clashLowSpeedLine": func() (any, error) { return s.GetClashLowSpeedLine() },
-		"clashXcdnEnabled":  func() (any, error) { return s.GetClashXcdnEnabled() },
-		"aliyunAk":          func() (any, error) { return s.GetAliyunAk() },
-		"aliyunSk":          func() (any, error) { return s.GetAliyunSk() },
+		"expireDiff":         func() (any, error) { return s.GetExpireDiff() },
+		"trafficDiff":        func() (any, error) { return s.GetTrafficDiff() },
+		"pageSize":           func() (any, error) { return s.GetPageSize() },
+		"defaultCert":        func() (any, error) { return s.GetCertFile() },
+		"defaultKey":         func() (any, error) { return s.GetKeyFile() },
+		"tgBotEnable":        func() (any, error) { return s.GetTgbotEnabled() },
+		"subEnable":          func() (any, error) { return s.GetSubEnable() },
+		"subJsonEnable":      func() (any, error) { return s.GetSubJsonEnable() },
+		"subTitle":           func() (any, error) { return s.GetSubTitle() },
+		"subURI":             func() (any, error) { return s.GetSubURI() },
+		"subJsonURI":         func() (any, error) { return s.GetSubJsonURI() },
+		"remarkModel":        func() (any, error) { return s.GetRemarkModel() },
+		"datepicker":         func() (any, error) { return s.GetDatepicker() },
+		"ipLimitEnable":      func() (any, error) { return s.GetIpLimitEnable() },
+		"clashDomain":        func() (any, error) { return s.GetClashDomain() },
+		"clashSubDomain":     func() (any, error) { return s.GetClashSubDomain() },
+		"clashPrefix":        func() (any, error) { return s.GetClashPrefix() },
+		"clashCount":         func() (any, error) { return s.GetClashCount() },
+		"clashNoPort":        func() (any, error) { return s.GetClashNoPort() },
+		"clashCustomRules":   func() (any, error) { return s.GetClashCustomRules() },
+		"clashRuleProviders": func() (any, error) { return s.GetClashRuleProviders() },
+		"clashRules":         func() (any, error) { return s.GetClashRules() },
+		"clashLowSpeedLine":  func() (any, error) { return s.GetClashLowSpeedLine() },
+		"clashXcdnEnabled":   func() (any, error) { return s.GetClashXcdnEnabled() },
+		"aliyunAk":           func() (any, error) { return s.GetAliyunAk() },
+		"aliyunSk":           func() (any, error) { return s.GetAliyunSk() },
 		"aliyunDnsFailCount": func() (any, error) { return s.GetAliyunDnsFailCount() },
 	}
 
@@ -876,6 +880,22 @@ func (s *SettingService) GetClashCustomRules() (string, error) {
 
 func (s *SettingService) UpdateClashCustomRules(rules string) error {
 	return s.setString("clashCustomRules", rules)
+}
+
+func (s *SettingService) GetClashRuleProviders() (string, error) {
+	return s.getString("clashRuleProviders")
+}
+
+func (s *SettingService) UpdateClashRuleProviders(providers string) error {
+	return s.setString("clashRuleProviders", providers)
+}
+
+func (s *SettingService) GetClashRules() (string, error) {
+	return s.getString("clashRules")
+}
+
+func (s *SettingService) UpdateClashRules(rules string) error {
+	return s.setString("clashRules", rules)
 }
 
 func (s *SettingService) GetClashLowSpeedLine() (bool, error) {

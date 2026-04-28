@@ -86,6 +86,8 @@ DOMAIN-SUFFIX,steamcontent.com,🚀 手动切换
 DOMAIN-SUFFIX,steamstatic.com,DIRECT
 DOMAIN-SUFFIX,steamcdn-a.akamaihd.net,DIRECT
 DOMAIN-SUFFIX,steamstat.us,DIRECT`;
+        this.clashRuleProviders = "";
+        this.clashRules = "";
 
         this.timeLocation = "Local";
 

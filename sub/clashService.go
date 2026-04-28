@@ -40,7 +40,7 @@ func NewClashService() *ClashService {
 }
 
 // 生成 Clash 配置
-func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, count int, prefix, origin string, subPort int, customRules string) (*ClashConfig, error) {
+func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, count int, prefix, origin string, subPort int, customRules, customRuleProviders, fullRules string) (*ClashConfig, error) {
 	var baseNodes []*model.Inbound
 
 	if uuid != "" {
@@ -62,11 +62,11 @@ func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, cou
 	// 生成代理组
 	proxyGroups := s.generateProxyGroups(proxiesMap, orderedGroupNames, xcdnProxyNames)
 
-	// 生成规则提供者
-	ruleProviders := s.generateRuleProviders(origin)
+	// 生成规则提供者（可被自定义完整覆盖）
+	ruleProviders := s.generateRuleProviders(origin, customRuleProviders)
 
-	// 生成规则（合并自定义规则）
-	rules := s.generateRules(customRules)
+	// 生成规则（支持完整覆盖或增量追加）
+	rules := s.generateRules(customRules, fullRules)
 
 	// 展平所有代理用于配置文件
 	var allProxies []ClashProxy
@@ -297,7 +297,6 @@ func (s *ClashService) createTrojanProxyWithName(inbound *model.Inbound, cdnServ
 	}
 }
 
-
 // 生成代理组（使用按inbound ID排序的组名列表，并包含 xcdn 节点组）
 func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, orderedGroupNames []string, xcdnProxyNames []string) []ClashProxyGroup {
 	groups := []ClashProxyGroup{}
@@ -357,8 +356,14 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, o
 	return groups
 }
 
-// 生成规则提供者
-func (s *ClashService) generateRuleProviders(origin string) map[string]ClashRuleProvider {
+// 生成规则提供者（支持 JSON 完整覆盖）
+func (s *ClashService) generateRuleProviders(origin string, customRuleProviders string) map[string]ClashRuleProvider {
+	if strings.TrimSpace(customRuleProviders) != "" {
+		custom := map[string]ClashRuleProvider{}
+		if err := json.Unmarshal([]byte(customRuleProviders), &custom); err == nil && len(custom) > 0 {
+			return custom
+		}
+	}
 	return map[string]ClashRuleProvider{
 		"reject": {
 			Type:     "http",
@@ -433,8 +438,24 @@ func (s *ClashService) generateRuleProviders(origin string) map[string]ClashRule
 	}
 }
 
-// 生成规则（合并自定义规则和固定规则）
-func (s *ClashService) generateRules(customRules string) []string {
+// 生成规则（支持完整覆盖或增量追加）
+func (s *ClashService) generateRules(customRules string, fullRules string) []string {
+	parseRules := func(raw string) []string {
+		lines := strings.Split(raw, "\n")
+		result := make([]string, 0, len(lines))
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line != "" && !strings.HasPrefix(line, "#") {
+				result = append(result, line)
+			}
+		}
+		return result
+	}
+
+	if strings.TrimSpace(fullRules) != "" {
+		return parseRules(fullRules)
+	}
+
 	var rules []string
 
 	// Cloudflare IP 直连（固定规则）
@@ -450,16 +471,7 @@ func (s *ClashService) generateRules(customRules string) []string {
 		"IP-CIDR,172.67.131.193/32,DIRECT,no-resolve",
 	)
 
-	// 添加自定义规则
-	if customRules != "" {
-		lines := strings.Split(customRules, "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line != "" && !strings.HasPrefix(line, "#") {
-				rules = append(rules, line)
-			}
-		}
-	}
+	rules = append(rules, parseRules(customRules)...)
 
 	// 添加固定的基础规则
 	rules = append(rules,

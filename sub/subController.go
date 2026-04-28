@@ -293,14 +293,22 @@ func (a *SUBController) generateClash(c *gin.Context) {
 		subURI = subURI[:idx]
 	}
 
-	// 获取自定义规则
+	// 获取自定义规则与完整规则配置
 	customRules, err := settingService.GetClashCustomRules()
 	if err != nil {
 		customRules = ""
 	}
+	ruleProvidersText, err := settingService.GetClashRuleProviders()
+	if err != nil {
+		ruleProvidersText = ""
+	}
+	clashRulesText, err := settingService.GetClashRules()
+	if err != nil {
+		clashRulesText = ""
+	}
 
 	// 低速专线默认开启（xcdn节点）
-	config, err := a.clashService.GenerateClashConfig(uuid, password, domain, countInt, prefix, subURI, subPort, customRules)
+	config, err := a.clashService.GenerateClashConfig(uuid, password, domain, countInt, prefix, subURI, subPort, customRules, ruleProvidersText, clashRulesText)
 	if err != nil {
 		c.String(500, "生成配置失败: %v", err)
 		return
