@@ -146,6 +146,8 @@
       aliyunDnsStatus: null,
       aliyunDnsStatusError: "",
       aliyunDnsStatusLoading: false,
+      clashRulePreview: "",
+      clashRulePreviewLoading: false,
       user: {},
       lang: LanguageManager.getLanguage(),
       inboundOptions: [],
@@ -296,6 +298,7 @@
           this.allSetting = new AllSetting(msg.obj);
           app.changeRemarkSample();
           this.saveBtnDisable = true;
+          this.fetchClashRulePreview();
         }
       },
       async loadInboundTags() {
@@ -448,6 +451,99 @@
           this.aliyunDnsStatusError = e.message || "";
         } finally {
           this.aliyunDnsStatusLoading = false;
+        }
+      },
+      async fetchClashRulePreview() {
+        this.clashRulePreviewLoading = true;
+        try {
+          const trimLines = (raw) => (raw || '').split('\n').map(s => s.trim()).filter(s => s && !s.startsWith('#'));
+          const origin = (() => {
+            const fromUri = (this.allSetting.subURI || '').trim();
+            if (fromUri.startsWith('http://') || fromUri.startsWith('https://')) {
+              const idx = fromUri.lastIndexOf('/');
+              return idx > 8 ? fromUri.slice(0, idx) : fromUri;
+            }
+            const protocol = window.location.protocol || 'http:';
+            const host = (this.allSetting.clashSubDomain || this.allSetting.subDomain || window.location.host || '').trim();
+            return host ? `${protocol}//${host}` : '';
+          })();
+
+          const providers = [
+            ['reject', 'domain'],
+            ['icloud', 'domain'],
+            ['apple', 'domain'],
+            ['google', 'domain'],
+            ['proxy', 'domain'],
+            ['direct', 'domain'],
+            ['private', 'domain'],
+            ['telegramcidr', 'ipcidr'],
+            ['lancidr', 'ipcidr'],
+            ['applications', 'classical'],
+          ];
+
+          const customRules = trimLines(this.allSetting.clashCustomRules);
+          const baseRules = [
+            'IP-CIDR,104.21.16.1/32,DIRECT,no-resolve',
+            'IP-CIDR,104.21.48.1/32,DIRECT,no-resolve',
+            'IP-CIDR,104.21.112.1/32,DIRECT,no-resolve',
+            'IP-CIDR,104.21.32.1/32,DIRECT,no-resolve',
+            'IP-CIDR,104.21.96.1/32,DIRECT,no-resolve',
+            'IP-CIDR,104.21.64.1/32,DIRECT,no-resolve',
+            'IP-CIDR,104.21.80.1/32,DIRECT,no-resolve',
+            'IP-CIDR,104.21.4.71/32,DIRECT,no-resolve',
+            'IP-CIDR,172.67.131.193/32,DIRECT,no-resolve',
+            'DOMAIN-SUFFIX,ip6-localhost,DIRECT',
+            'DOMAIN-SUFFIX,ip6-loopback,DIRECT',
+            'DOMAIN-SUFFIX,lan,DIRECT',
+            'DOMAIN-SUFFIX,local,DIRECT',
+            'DOMAIN-SUFFIX,localhost,DIRECT',
+            'IP-CIDR,0.0.0.0/8,DIRECT,no-resolve',
+            'IP-CIDR,10.0.0.0/8,DIRECT,no-resolve',
+            'IP-CIDR,100.64.0.0/10,DIRECT,no-resolve',
+            'IP-CIDR,127.0.0.0/8,DIRECT,no-resolve',
+            'IP-CIDR,172.16.0.0/12,DIRECT,no-resolve',
+            'IP-CIDR,192.168.0.0/16,DIRECT,no-resolve',
+            'IP-CIDR,198.18.0.0/16,DIRECT,no-resolve',
+            'IP-CIDR,224.0.0.0/4,DIRECT,no-resolve',
+            'IP-CIDR6,::1/128,DIRECT,no-resolve',
+            'IP-CIDR6,fc00::/7,DIRECT,no-resolve',
+            'IP-CIDR6,fe80::/10,DIRECT,no-resolve',
+            'IP-CIDR6,fd00::/8,DIRECT,no-resolve',
+            'RULE-SET,applications,DIRECT',
+            'DOMAIN,clash.razord.top,DIRECT',
+            'DOMAIN,yacd.haishan.me,DIRECT',
+            'RULE-SET,private,DIRECT',
+            'RULE-SET,reject,REJECT',
+            'RULE-SET,icloud,DIRECT',
+            'RULE-SET,apple,DIRECT',
+            'RULE-SET,google,🚀 手动切换',
+            'RULE-SET,proxy,🚀 手动切换',
+            'RULE-SET,direct,DIRECT',
+            'RULE-SET,lancidr,DIRECT',
+            'RULE-SET,telegramcidr,🚀 手动切换',
+            'GEOIP,LAN,DIRECT',
+            'GEOIP,CN,DIRECT,no-resolve',
+            'MATCH,🎯 兜底规则',
+          ];
+
+          const lines = ['rule-providers:'];
+          providers.forEach(([name, behavior]) => {
+            lines.push(`  ${name}:`);
+            lines.push('    type: http');
+            lines.push(`    behavior: ${behavior}`);
+            lines.push(`    url: '${origin}/rules/${name}'`);
+            lines.push(`    path: ./ruleset/${name}.yaml`);
+            lines.push('    interval: 86400');
+          });
+          lines.push('');
+          lines.push('rules:');
+          [...baseRules.slice(0, 9), ...customRules, ...baseRules.slice(9)].forEach(r => {
+            lines.push(`  - '${r}'`);
+          });
+
+          this.clashRulePreview = lines.join('\n');
+        } finally {
+          this.clashRulePreviewLoading = false;
         }
       },
       toggleTwoFactor(newValue) {

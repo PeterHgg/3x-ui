@@ -177,32 +177,18 @@
             <template #title>自定义规则（追加模式）</template>
             <template #description>每行一条，会插入在 Cloudflare IP 直连规则之后、基础规则之前；如果下方“完整 Rules”有内容，这里会被忽略</template>
             <template #control>
-                <a-textarea v-model="allSetting.clashCustomRules" :rows="10" placeholder="DOMAIN-SUFFIX,example.com,🚀 手动切换
+                <a-textarea v-model="allSetting.clashCustomRules" :rows="10" @input="fetchClashRulePreview" placeholder="DOMAIN-SUFFIX,example.com,🚀 手动切换
 DOMAIN,api.example.com,DIRECT" style="font-family: monospace; width: 100%"></a-textarea>
             </template>
         </a-setting-list-item>
         <a-setting-list-item paddings="small">
-            <template #title>完整 Rule-Providers（JSON）</template>
-            <template #description>填写后将完整覆盖默认 rule-providers；留空则使用系统内置默认值</template>
+            <template #title>当前 Rule 配置预览</template>
+            <template #description>展示当前会下发到 Clash 配置文件里的 rule-providers 和 rules；修改“自定义规则”后可点击刷新同步查看</template>
             <template #control>
-                <a-textarea v-model="allSetting.clashRuleProviders" :rows="12" placeholder='{
-  "proxy": {
-    "type": "http",
-    "behavior": "domain",
-    "url": "https://example.com/proxy.yaml",
-    "path": "./ruleset/proxy.yaml",
-    "interval": 86400
-  }
-}' style="font-family: monospace; width: 100%"></a-textarea>
-            </template>
-        </a-setting-list-item>
-        <a-setting-list-item paddings="small">
-            <template #title>完整 Rules（逐行）</template>
-            <template #description>填写后将完整覆盖默认 rules（包含 MATCH）；留空则走默认 + 自定义规则追加模式</template>
-            <template #control>
-                <a-textarea v-model="allSetting.clashRules" :rows="12" placeholder="RULE-SET,proxy,🚀 手动切换
-RULE-SET,direct,DIRECT
-MATCH,🎯 兜底规则" style="font-family: monospace; width: 100%"></a-textarea>
+                <a-space direction="vertical" :style="{ width: '100%' }">
+                    <a-button type="default" size="small" :loading="clashRulePreviewLoading" @click="fetchClashRulePreview">刷新 Rule 预览</a-button>
+                    <a-textarea :value="clashRulePreview" :rows="16" readonly style="font-family: monospace; width: 100%"></a-textarea>
+                </a-space>
             </template>
         </a-setting-list-item>
         <a-setting-list-item paddings="small">
