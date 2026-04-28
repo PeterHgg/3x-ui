@@ -454,44 +454,164 @@
         }
       },
       buildClashRuleMerged() {
-        const providers = (this.allSetting.clashRuleProviders || '').trim();
-        const rules = (this.allSetting.clashRules || '').trim();
-        const custom = (this.allSetting.clashCustomRules || '').trim();
+        const providersRaw = (this.allSetting.clashRuleProviders || '').trim();
+        const rulesRaw = (this.allSetting.clashRules || '').trim();
+        const customRaw = (this.allSetting.clashCustomRules || '').trim();
 
-        if (providers || rules) {
-          this.clashRuleMerged = `${providers}\n\nrules:\n${rules}`.trim();
+        const origin = (() => {
+          const fromUri = (this.allSetting.subURI || '').trim();
+          if (fromUri.startsWith('http://') || fromUri.startsWith('https://')) {
+            const idx = fromUri.lastIndexOf('/');
+            return idx > 8 ? fromUri.slice(0, idx) : fromUri;
+          }
+          const protocol = window.location.protocol || 'http:';
+          const host = (this.allSetting.clashSubDomain || this.allSetting.subDomain || window.location.host || '').trim();
+          return host ? `${protocol}//${host}` : '';
+        })();
+
+        const defaultProviderMeta = [
+          ['reject', 'domain'],
+          ['icloud', 'domain'],
+          ['apple', 'domain'],
+          ['google', 'domain'],
+          ['proxy', 'domain'],
+          ['direct', 'domain'],
+          ['private', 'domain'],
+          ['telegramcidr', 'ipcidr'],
+          ['lancidr', 'ipcidr'],
+          ['applications', 'classical'],
+        ];
+
+        const toProviderYaml = (providersObj) => {
+          const lines = ['rule-providers:'];
+          Object.keys(providersObj).forEach(name => {
+            const p = providersObj[name] || {};
+            lines.push(`  ${name}:`);
+            lines.push(`    type: ${p.type || 'http'}`);
+            lines.push(`    behavior: ${p.behavior || 'domain'}`);
+            lines.push(`    url: '${p.url || `${origin}/rules/${name}`}'`);
+            lines.push(`    path: ${p.path || `./ruleset/${name}.yaml`}`);
+            lines.push(`    interval: ${p.interval || 86400}`);
+          });
+          return lines.join('\n');
+        };
+
+        const defaultProvidersObj = {};
+        defaultProviderMeta.forEach(([name, behavior]) => {
+          defaultProvidersObj[name] = {
+            type: 'http',
+            behavior,
+            url: `${origin}/rules/${name}`,
+            path: `./ruleset/${name}.yaml`,
+            interval: 86400,
+          };
+        });
+
+        const baseHead = [
+          'IP-CIDR,104.21.16.1/32,DIRECT,no-resolve',
+          'IP-CIDR,104.21.48.1/32,DIRECT,no-resolve',
+          'IP-CIDR,104.21.112.1/32,DIRECT,no-resolve',
+          'IP-CIDR,104.21.32.1/32,DIRECT,no-resolve',
+          'IP-CIDR,104.21.96.1/32,DIRECT,no-resolve',
+          'IP-CIDR,104.21.64.1/32,DIRECT,no-resolve',
+          'IP-CIDR,104.21.80.1/32,DIRECT,no-resolve',
+          'IP-CIDR,104.21.4.71/32,DIRECT,no-resolve',
+          'IP-CIDR,172.67.131.193/32,DIRECT,no-resolve',
+        ];
+        const baseTail = [
+          'DOMAIN-SUFFIX,ip6-localhost,DIRECT',
+          'DOMAIN-SUFFIX,ip6-loopback,DIRECT',
+          'DOMAIN-SUFFIX,lan,DIRECT',
+          'DOMAIN-SUFFIX,local,DIRECT',
+          'DOMAIN-SUFFIX,localhost,DIRECT',
+          'IP-CIDR,0.0.0.0/8,DIRECT,no-resolve',
+          'IP-CIDR,10.0.0.0/8,DIRECT,no-resolve',
+          'IP-CIDR,100.64.0.0/10,DIRECT,no-resolve',
+          'IP-CIDR,127.0.0.0/8,DIRECT,no-resolve',
+          'IP-CIDR,172.16.0.0/12,DIRECT,no-resolve',
+          'IP-CIDR,192.168.0.0/16,DIRECT,no-resolve',
+          'IP-CIDR,198.18.0.0/16,DIRECT,no-resolve',
+          'IP-CIDR,224.0.0.0/4,DIRECT,no-resolve',
+          'IP-CIDR6,::1/128,DIRECT,no-resolve',
+          'IP-CIDR6,fc00::/7,DIRECT,no-resolve',
+          'IP-CIDR6,fe80::/10,DIRECT,no-resolve',
+          'IP-CIDR6,fd00::/8,DIRECT,no-resolve',
+          'RULE-SET,applications,DIRECT',
+          'DOMAIN,clash.razord.top,DIRECT',
+          'DOMAIN,yacd.haishan.me,DIRECT',
+          'RULE-SET,private,DIRECT',
+          'RULE-SET,reject,REJECT',
+          'RULE-SET,icloud,DIRECT',
+          'RULE-SET,apple,DIRECT',
+          'RULE-SET,google,🚀 手动切换',
+          'RULE-SET,proxy,🚀 手动切换',
+          'RULE-SET,direct,DIRECT',
+          'RULE-SET,lancidr,DIRECT',
+          'RULE-SET,telegramcidr,🚀 手动切换',
+          'GEOIP,LAN,DIRECT',
+          'GEOIP,CN,DIRECT,no-resolve',
+          'MATCH,🎯 兜底规则',
+        ];
+
+        const toRulesYaml = (rulesArr) => ['rules:', ...rulesArr.map(r => `  - '${r}'`)].join('\n');
+
+        if (providersRaw || rulesRaw) {
+          let providersObj = null;
+          try {
+            providersObj = JSON.parse(providersRaw);
+          } catch (_) {}
+          const providersYaml = providersObj && typeof providersObj === 'object' ? toProviderYaml(providersObj) : `rule-providers:\n${providersRaw}`.trim();
+          const rulesArr = rulesRaw.split('\n').map(s => s.trim()).filter(Boolean);
+          this.clashRuleMerged = `${providersYaml}\n\n${toRulesYaml(rulesArr)}`.trim();
           return;
         }
 
-        const appendRules = custom
-          .split('\n')
-          .map(s => s.trim())
-          .filter(s => s && !s.startsWith('#'))
-          .map(s => `  - '${s}'`)
-          .join('\n');
-
-        this.clashRuleMerged = `rule-providers:\n\nrules:\n${appendRules}`.trim();
+        const customRules = customRaw.split('\n').map(s => s.trim()).filter(s => s && !s.startsWith('#'));
+        const mergedRules = [...baseHead, ...customRules, ...baseTail];
+        this.clashRuleMerged = `${toProviderYaml(defaultProvidersObj)}\n\n${toRulesYaml(mergedRules)}`.trim();
       },
       applyClashRuleMerged() {
         const text = (this.clashRuleMerged || '').replace(/\r\n/g, '\n');
         const lines = text.split('\n');
         let section = '';
-        const providerLines = [];
+        let current = '';
+        const providersObj = {};
         const ruleLines = [];
 
         lines.forEach(line => {
           const t = line.trim();
           if (t === 'rule-providers:') {
             section = 'providers';
+            current = '';
             return;
           }
           if (t === 'rules:') {
             section = 'rules';
+            current = '';
             return;
           }
+
           if (section === 'providers') {
-            providerLines.push(line);
-          } else if (section === 'rules') {
+            const keyMatch = line.match(/^\s{2}([\w-]+):\s*$/);
+            if (keyMatch) {
+              current = keyMatch[1];
+              providersObj[current] = {};
+              return;
+            }
+            const valMatch = line.match(/^\s{4}([\w-]+):\s*(.*)$/);
+            if (valMatch && current) {
+              let v = valMatch[2].trim();
+              v = v.replace(/^['"]|['"]$/g, '');
+              if (valMatch[1] === 'interval') {
+                providersObj[current][valMatch[1]] = Number(v) || 86400;
+              } else {
+                providersObj[current][valMatch[1]] = v;
+              }
+            }
+            return;
+          }
+
+          if (section === 'rules') {
             const m = line.match(/^\s*-\s*(.*)$/);
             if (m) {
               ruleLines.push(m[1].replace(/^['"]|['"]$/g, '').trim());
@@ -499,7 +619,7 @@
           }
         });
 
-        this.allSetting.clashRuleProviders = providerLines.join('\n').trim();
+        this.allSetting.clashRuleProviders = Object.keys(providersObj).length > 0 ? JSON.stringify(providersObj, null, 2) : '';
         this.allSetting.clashRules = ruleLines.join('\n').trim();
         this.allSetting.clashCustomRules = '';
       },
