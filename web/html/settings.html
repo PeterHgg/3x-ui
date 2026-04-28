@@ -147,6 +147,7 @@
       aliyunDnsStatusError: "",
       aliyunDnsStatusLoading: false,
       clashRuleMerged: "",
+      oldClashRuleMerged: "",
       user: {},
       lang: LanguageManager.getLanguage(),
       inboundOptions: [],
@@ -298,6 +299,7 @@
           app.changeRemarkSample();
           this.saveBtnDisable = true;
           this.buildClashRuleMerged();
+          this.oldClashRuleMerged = this.clashRuleMerged;
         }
       },
       async loadInboundTags() {
@@ -881,7 +883,9 @@
       await this.loadInboundTags();
       while (true) {
         await PromiseUtil.sleep(1000);
-        this.saveBtnDisable = this.oldAllSetting.equals(this.allSetting);
+        const settingUnchanged = this.oldAllSetting.equals(this.allSetting);
+        const mergedUnchanged = (this.oldClashRuleMerged || '') === (this.clashRuleMerged || '');
+        this.saveBtnDisable = settingUnchanged && mergedUnchanged;
       }
     }
   });
