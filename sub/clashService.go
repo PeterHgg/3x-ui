@@ -335,6 +335,7 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, o
 			Proxies:  proxyNames,
 			URL:      "http://cp.cloudflare.com/generate_204",
 			Interval: 300,
+			Lazy:     true,
 			Strategy: "round-robin", // 显式设置为 round-robin
 		})
 

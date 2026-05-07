@@ -66,6 +66,7 @@ type ClashProxyGroup struct {
 	Proxies  []string `yaml:"proxies"`
 	URL      string   `yaml:"url,omitempty"`
 	Interval int      `yaml:"interval,omitempty"`
+	Lazy     bool     `yaml:"lazy,omitempty"`
 	Strategy string   `yaml:"strategy,omitempty"` // round-robin
 }
 
@@ -195,6 +196,9 @@ func (c *ClashConfig) ToYAML() string {
 		}
 		if group.Interval > 0 {
 			sb.WriteString(fmt.Sprintf(", interval: %d", group.Interval))
+		}
+		if group.Lazy {
+			sb.WriteString(", lazy: true")
 		}
 		if group.Strategy != "" {
 			sb.WriteString(fmt.Sprintf(", strategy: %s", group.Strategy))
