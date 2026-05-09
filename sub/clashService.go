@@ -329,8 +329,13 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, o
 			proxyNames = append(proxyNames, p.Name)
 		}
 
+		proxyGroupName := groupName
+		if len(xcdnProxyNames) > 0 {
+			proxyGroupName += " 🛟 稳定备用"
+		}
+
 		groups = append(groups, ClashProxyGroup{
-			Name:     groupName,
+			Name:     proxyGroupName,
 			Type:     "load-balance",
 			Proxies:  proxyNames,
 			URL:      "http://cp.cloudflare.com/generate_204",
@@ -340,7 +345,7 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, o
 		})
 
 		// load-balance 组加入手动切换
-		topLevelProxies = append(topLevelProxies, groupName)
+		topLevelProxies = append(topLevelProxies, proxyGroupName)
 	}
 
 	// 更新 "手动切换" 组的 proxies
