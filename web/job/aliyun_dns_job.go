@@ -49,6 +49,15 @@ func NewAliyunDNSJob() *AliyunDNSJob {
 }
 
 func (j *AliyunDNSJob) Run() {
+	interval, _ := j.settingService.GetAliyunDnsInterval()
+	if interval <= 0 {
+		return
+	}
+
+	if (time.Now().Unix() / 60 % int64(interval)) != 0 {
+		return
+	}
+
 	_, _ = j.Sync()
 }
 

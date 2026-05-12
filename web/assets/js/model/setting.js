@@ -60,6 +60,7 @@ class AllSetting {
         this.clashCount = 0;
         this.clashNoPort = false;
         this.clashXcdnEnabled = false;
+        this.aliyunDnsInterval = 15;
         this.aliyunAk = "";
         this.aliyunSk = "";
         this.clashCustomRules = `DOMAIN-SUFFIX,szbdyd.com,REJECT

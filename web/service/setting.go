@@ -107,6 +107,7 @@ var defaultValueMap = map[string]string{
 	"clashNoPort":        "false",
 	"clashLowSpeedLine":  "false",
 	"clashXcdnEnabled":   "false",
+	"aliyunDnsInterval":  "15",
 	"aliyunAk":           "",
 	"aliyunSk":           "",
 	"aliyunDnsFailCount": "0",
@@ -771,6 +772,7 @@ func (s *SettingService) GetDefaultSettings(host string) (any, error) {
 		"clashRules":         func() (any, error) { return s.GetClashRules() },
 		"clashLowSpeedLine":  func() (any, error) { return s.GetClashLowSpeedLine() },
 		"clashXcdnEnabled":   func() (any, error) { return s.GetClashXcdnEnabled() },
+		"aliyunDnsInterval":  func() (any, error) { return s.GetAliyunDnsInterval() },
 		"aliyunAk":           func() (any, error) { return s.GetAliyunAk() },
 		"aliyunSk":           func() (any, error) { return s.GetAliyunSk() },
 		"aliyunDnsFailCount": func() (any, error) { return s.GetAliyunDnsFailCount() },
@@ -912,6 +914,17 @@ func (s *SettingService) GetClashXcdnEnabled() (bool, error) {
 
 func (s *SettingService) UpdateClashXcdnEnabled(enable bool) error {
 	return s.setBool("clashXcdnEnabled", enable)
+}
+
+func (s *SettingService) GetAliyunDnsInterval() (int, error) {
+	return s.getInt("aliyunDnsInterval")
+}
+
+func (s *SettingService) UpdateAliyunDnsInterval(interval int) error {
+	if interval < 0 {
+		interval = 0
+	}
+	return s.setInt("aliyunDnsInterval", interval)
 }
 
 func (s *SettingService) GetAliyunAk() (string, error) {

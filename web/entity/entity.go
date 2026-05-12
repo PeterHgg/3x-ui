@@ -89,6 +89,7 @@ type AllSetting struct {
 	ClashNoPort        bool   `json:"clashNoPort" form:"clashNoPort"`               // Hide port in subscription URL
 	ClashLowSpeedLine  bool   `json:"clashLowSpeedLine" form:"clashLowSpeedLine"`   // Enable low-speed direct line nodes
 	ClashXcdnEnabled   bool   `json:"clashXcdnEnabled" form:"clashXcdnEnabled"`     // Enable xcdn three-network optimization nodes
+	AliyunDnsInterval  int    `json:"aliyunDnsInterval" form:"aliyunDnsInterval"`   // Aliyun DNS auto update interval in minutes, 0 disables auto sync
 	AliyunAk           string `json:"aliyunAk" form:"aliyunAk"`                     // Aliyun AccessKey ID
 	AliyunSk           string `json:"aliyunSk" form:"aliyunSk"`                     // Aliyun AccessKey Secret
 	ClashCustomRules   string `json:"clashCustomRules" form:"clashCustomRules"`     // Custom Clash rules (append mode) (append mode)
