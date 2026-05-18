@@ -402,10 +402,20 @@
       async updateAliyunDNS() {
         const isCnameMode = this.allSetting.clashXcdnMode === 'cname';
         const modeName = isCnameMode ? '单 CNAME 中国地区' : 'Wetest 三网分线路';
-        this.syncLogs = [`[MODE] ${modeName}`];
+        this.syncLogs = [`[MODE] ${modeName}`, '[SAVE] 保存当前设置...'];
         this.syncLogVisible = true;
         this.syncLoading = true;
         try {
+          this.applyClashRuleMerged();
+          const saveMsg = await HttpUtil.post("/panel/setting/update", this.allSetting);
+          if (!saveMsg.success) {
+            this.syncLogs.push(`[ERROR] 保存设置失败: ${saveMsg.msg}`);
+            return;
+          }
+          await this.getAllSetting();
+          this.syncLogs.push('[SAVE] 当前设置已保存');
+          this.syncLogs.push('[SYNC] 开始更新 DNS...');
+
           const msg = await HttpUtil.post("/panel/setting/updateAliyunDNS");
           if (msg.success) {
             if (Array.isArray(msg.obj) && msg.obj.length > 0) {
