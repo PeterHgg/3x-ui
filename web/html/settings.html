@@ -400,19 +400,24 @@
         window.location.replace(url.toString());
       },
       async updateAliyunDNS() {
-        this.syncLogs = [];
+        const isCnameMode = this.allSetting.clashXcdnMode === 'cname';
+        const modeName = isCnameMode ? '单 CNAME 中国地区' : 'Wetest 三网分线路';
+        this.syncLogs = [`[MODE] ${modeName}`];
         this.syncLogVisible = true;
         this.syncLoading = true;
         try {
           const msg = await HttpUtil.post("/panel/setting/updateAliyunDNS");
           if (msg.success) {
-            this.syncLogs = msg.obj || [];
-            this.syncLogs.push('[OK] DNS sync finished');
-            Vue.prototype.$message['success']('{{ i18n "pages.settings.updateSuccess" }}');
-          } else {
-            if (Array.isArray(msg.obj)) {
+            if (Array.isArray(msg.obj) && msg.obj.length > 0) {
               this.syncLogs = [...this.syncLogs, ...msg.obj];
             }
+            this.syncLogs.push(isCnameMode ? '[OK] 单 CNAME 中国地区同步完成' : '[OK] Wetest 三网分线路同步完成');
+            Vue.prototype.$message['success']('{{ i18n "pages.settings.updateSuccess" }}');
+          } else {
+            if (Array.isArray(msg.obj) && msg.obj.length > 0) {
+              this.syncLogs = [...this.syncLogs, ...msg.obj];
+            }
+            this.syncLogs.push(isCnameMode ? '[ERROR] 单 CNAME 中国地区同步失败' : '[ERROR] Wetest 三网分线路同步失败');
             this.syncLogs.push(`[ERROR] ${msg.msg}`);
           }
         } catch (e) {

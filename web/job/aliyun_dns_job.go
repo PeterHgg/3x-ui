@@ -107,12 +107,14 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 		if cnameTarget == "" {
 			cnameTarget = "saas.sin.fan"
 		}
+		addLog("[单 CNAME 中国地区] 开始同步")
 		addLog(fmt.Sprintf("Using CNAME mode for %s.%s -> %s", recordName, mainDomain, cnameTarget))
 		if err := j.syncSingleChinaCname(client, mainDomain, recordName, cnameTarget, addLog); err != nil {
 			addLog(fmt.Sprintf("CNAME 模式同步失败: %v", err))
 			return logs, err
 		}
 		_ = j.settingService.UpdateAliyunDnsFailCount(0)
+		addLog("[单 CNAME 中国地区] 同步完成")
 		addLog("CNAME 模式同步完成")
 		return logs, nil
 	}
@@ -152,16 +154,16 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 		if rawBody != "" {
 			addLog(fmt.Sprintf("Wetest response status=%d, body_len=%d", statusCode, len(rawBody)))
 		}
-		if failCount >= 5 {
-			addLog("连续失败达到阈值，切换 CNAME 兜底")
-			if err := j.syncCnameFallback(client, mainDomain, recordName, fallbackLine, fallbackTargets, addLog); err != nil {
-				addLog(fmt.Sprintf("CNAME 兜底失败: %v", err))
-				return err
-			}
-			addLog("CNAME 兜底完成")
+		addLog("切换 CNAME 兜底")
+		if err := j.syncCnameFallback(client, mainDomain, recordName, fallbackLine, fallbackTargets, addLog); err != nil {
+			addLog(fmt.Sprintf("CNAME 兜底失败: %v", err))
+			return err
 		}
+		addLog("CNAME 兜底完成")
 		return err
 	}
+
+	addLog("[Wetest 三网分线路] 开始同步")
 
 	// 1. Fetch IPs from Wetest
 	addLog("Fetching best IPs from wetest.vip...")
@@ -204,6 +206,9 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 
 	// 2. Update Aliyun DNS
 	addLog("Updating Aliyun DNS records...")
+	if err := j.clearNonWetestRecords(client, mainDomain, recordName, addLog); err != nil {
+		return logs, err
+	}
 	syncLine := func(line string, newIPs []string) error {
 		addLog(fmt.Sprintf("Syncing line [%s]...", line))
 		if len(newIPs) == 0 {
@@ -276,6 +281,7 @@ func (j *AliyunDNSJob) Sync() ([]string, error) {
 	}
 
 	_ = j.settingService.UpdateAliyunDnsFailCount(0)
+	addLog("[Wetest 三网分线路] 同步完成")
 	addLog("DNS sync completed successfully")
 	return logs, nil
 }
@@ -293,18 +299,13 @@ func (j *AliyunDNSJob) syncSingleChinaCname(client *AliyunDNSClient, domain, rec
 			continue
 		}
 
-		isChinaRelated := r.Line == chinaLine || r.Line == "telecom" || r.Line == "unicom" || r.Line == "mobile"
-		if !isChinaRelated {
-			continue
-		}
-
 		if strings.EqualFold(r.Type, "CNAME") && r.Line == chinaLine && r.Value == target && !found {
 			found = true
 			addLog(fmt.Sprintf("Keep CNAME record: %s -> %s", chinaLine, r.Value))
 			continue
 		}
 
-		addLog(fmt.Sprintf("Deleting China-related record: %s %s -> %s", r.Line, r.Type, r.Value))
+		addLog(fmt.Sprintf("Deleting mixed record: %s %s -> %s", r.Line, r.Type, r.Value))
 		if err := client.DeleteRecord(r.RecordId); err != nil {
 			addLog(fmt.Sprintf("Error deleting %s: %v", r.Value, err))
 			return err
@@ -315,6 +316,30 @@ func (j *AliyunDNSJob) syncSingleChinaCname(client *AliyunDNSClient, domain, rec
 		addLog(fmt.Sprintf("Adding CNAME record: %s -> %s", chinaLine, target))
 		if err := client.AddRecord(domain, recordName, "CNAME", target, chinaLine); err != nil {
 			addLog(fmt.Sprintf("Error adding %s: %v", target, err))
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (j *AliyunDNSJob) clearNonWetestRecords(client *AliyunDNSClient, domain, recordName string, addLog func(string)) error {
+	existingRecords, err := client.GetRecords(domain, recordName, "")
+	if err != nil {
+		return err
+	}
+
+	for _, r := range existingRecords {
+		if r.Value == "" {
+			continue
+		}
+		isWetestLine := r.Line == "telecom" || r.Line == "unicom" || r.Line == "mobile"
+		if isWetestLine && strings.EqualFold(r.Type, "A") {
+			continue
+		}
+		addLog(fmt.Sprintf("Deleting non-Wetest record: %s %s -> %s", r.Line, r.Type, r.Value))
+		if err := client.DeleteRecord(r.RecordId); err != nil {
+			addLog(fmt.Sprintf("Error deleting %s: %v", r.Value, err))
 			return err
 		}
 	}
@@ -343,23 +368,16 @@ func (j *AliyunDNSJob) syncCnameFallback(client *AliyunDNSClient, domain, record
 			continue
 		}
 
-		if strings.EqualFold(r.Type, "A") {
-			addLog(fmt.Sprintf("Deleting A record: %s -> %s (%s)", r.Line, r.Value, r.RecordId))
-			if err := client.DeleteRecord(r.RecordId); err != nil {
-				addLog(fmt.Sprintf("Error deleting A record %s: %v", r.Value, err))
-			}
-			continue
-		}
-
 		if strings.EqualFold(r.Type, "CNAME") && r.Line == line && keepMap[r.Value] {
 			existingTargetMap[r.Value] = true
 			addLog(fmt.Sprintf("Keep CNAME record: %s -> %s", line, r.Value))
 			continue
 		}
 
-		addLog(fmt.Sprintf("Deleting old record: %s %s -> %s", r.Line, r.Type, r.Value))
+		addLog(fmt.Sprintf("Deleting mixed record: %s %s -> %s", r.Line, r.Type, r.Value))
 		if err := client.DeleteRecord(r.RecordId); err != nil {
 			addLog(fmt.Sprintf("Error deleting %s: %v", r.Value, err))
+			return err
 		}
 	}
 
@@ -370,6 +388,7 @@ func (j *AliyunDNSJob) syncCnameFallback(client *AliyunDNSClient, domain, record
 		addLog(fmt.Sprintf("Adding CNAME record: %s -> %s", line, target))
 		if err := client.AddRecord(domain, recordName, "CNAME", target, line); err != nil {
 			addLog(fmt.Sprintf("Error adding %s: %v", target, err))
+			return err
 		}
 	}
 
