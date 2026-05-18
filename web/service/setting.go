@@ -100,17 +100,19 @@ var defaultValueMap = map[string]string{
 	"ldapDefaultExpiryDays": "0",
 	"ldapDefaultLimitIP":    "0",
 	// Clash subscription defaults
-	"clashDomain":        "",
-	"clashSubDomain":     "",
-	"clashPrefix":        "",
-	"clashCount":         "0",
-	"clashNoPort":        "false",
-	"clashLowSpeedLine":  "false",
-	"clashXcdnEnabled":   "false",
-	"aliyunDnsInterval":  "15",
-	"aliyunAk":           "",
-	"aliyunSk":           "",
-	"aliyunDnsFailCount": "0",
+	"clashDomain":          "",
+	"clashSubDomain":       "",
+	"clashPrefix":          "",
+	"clashCount":           "0",
+	"clashNoPort":          "false",
+	"clashLowSpeedLine":    "false",
+	"clashXcdnEnabled":     "false",
+	"clashXcdnMode":        "wetest",
+	"clashXcdnCnameTarget": "saas.sin.fan",
+	"aliyunDnsInterval":    "15",
+	"aliyunAk":             "",
+	"aliyunSk":             "",
+	"aliyunDnsFailCount":   "0",
 	"clashCustomRules": `DOMAIN-SUFFIX,szbdyd.com,REJECT
 DOMAIN-SUFFIX,mcdn.bilivideo.com,REJECT
 DOMAIN-SUFFIX,mcdn.bilivideo.cn,REJECT
@@ -748,34 +750,36 @@ func (s *SettingService) GetDefaultXrayConfig() (any, error) {
 func (s *SettingService) GetDefaultSettings(host string) (any, error) {
 	type settingFunc func() (any, error)
 	settings := map[string]settingFunc{
-		"expireDiff":         func() (any, error) { return s.GetExpireDiff() },
-		"trafficDiff":        func() (any, error) { return s.GetTrafficDiff() },
-		"pageSize":           func() (any, error) { return s.GetPageSize() },
-		"defaultCert":        func() (any, error) { return s.GetCertFile() },
-		"defaultKey":         func() (any, error) { return s.GetKeyFile() },
-		"tgBotEnable":        func() (any, error) { return s.GetTgbotEnabled() },
-		"subEnable":          func() (any, error) { return s.GetSubEnable() },
-		"subJsonEnable":      func() (any, error) { return s.GetSubJsonEnable() },
-		"subTitle":           func() (any, error) { return s.GetSubTitle() },
-		"subURI":             func() (any, error) { return s.GetSubURI() },
-		"subJsonURI":         func() (any, error) { return s.GetSubJsonURI() },
-		"remarkModel":        func() (any, error) { return s.GetRemarkModel() },
-		"datepicker":         func() (any, error) { return s.GetDatepicker() },
-		"ipLimitEnable":      func() (any, error) { return s.GetIpLimitEnable() },
-		"clashDomain":        func() (any, error) { return s.GetClashDomain() },
-		"clashSubDomain":     func() (any, error) { return s.GetClashSubDomain() },
-		"clashPrefix":        func() (any, error) { return s.GetClashPrefix() },
-		"clashCount":         func() (any, error) { return s.GetClashCount() },
-		"clashNoPort":        func() (any, error) { return s.GetClashNoPort() },
-		"clashCustomRules":   func() (any, error) { return s.GetClashCustomRules() },
-		"clashRuleProviders": func() (any, error) { return s.GetClashRuleProviders() },
-		"clashRules":         func() (any, error) { return s.GetClashRules() },
-		"clashLowSpeedLine":  func() (any, error) { return s.GetClashLowSpeedLine() },
-		"clashXcdnEnabled":   func() (any, error) { return s.GetClashXcdnEnabled() },
-		"aliyunDnsInterval":  func() (any, error) { return s.GetAliyunDnsInterval() },
-		"aliyunAk":           func() (any, error) { return s.GetAliyunAk() },
-		"aliyunSk":           func() (any, error) { return s.GetAliyunSk() },
-		"aliyunDnsFailCount": func() (any, error) { return s.GetAliyunDnsFailCount() },
+		"expireDiff":           func() (any, error) { return s.GetExpireDiff() },
+		"trafficDiff":          func() (any, error) { return s.GetTrafficDiff() },
+		"pageSize":             func() (any, error) { return s.GetPageSize() },
+		"defaultCert":          func() (any, error) { return s.GetCertFile() },
+		"defaultKey":           func() (any, error) { return s.GetKeyFile() },
+		"tgBotEnable":          func() (any, error) { return s.GetTgbotEnabled() },
+		"subEnable":            func() (any, error) { return s.GetSubEnable() },
+		"subJsonEnable":        func() (any, error) { return s.GetSubJsonEnable() },
+		"subTitle":             func() (any, error) { return s.GetSubTitle() },
+		"subURI":               func() (any, error) { return s.GetSubURI() },
+		"subJsonURI":           func() (any, error) { return s.GetSubJsonURI() },
+		"remarkModel":          func() (any, error) { return s.GetRemarkModel() },
+		"datepicker":           func() (any, error) { return s.GetDatepicker() },
+		"ipLimitEnable":        func() (any, error) { return s.GetIpLimitEnable() },
+		"clashDomain":          func() (any, error) { return s.GetClashDomain() },
+		"clashSubDomain":       func() (any, error) { return s.GetClashSubDomain() },
+		"clashPrefix":          func() (any, error) { return s.GetClashPrefix() },
+		"clashCount":           func() (any, error) { return s.GetClashCount() },
+		"clashNoPort":          func() (any, error) { return s.GetClashNoPort() },
+		"clashCustomRules":     func() (any, error) { return s.GetClashCustomRules() },
+		"clashRuleProviders":   func() (any, error) { return s.GetClashRuleProviders() },
+		"clashRules":           func() (any, error) { return s.GetClashRules() },
+		"clashLowSpeedLine":    func() (any, error) { return s.GetClashLowSpeedLine() },
+		"clashXcdnEnabled":     func() (any, error) { return s.GetClashXcdnEnabled() },
+		"clashXcdnMode":        func() (any, error) { return s.GetClashXcdnMode() },
+		"clashXcdnCnameTarget": func() (any, error) { return s.GetClashXcdnCnameTarget() },
+		"aliyunDnsInterval":    func() (any, error) { return s.GetAliyunDnsInterval() },
+		"aliyunAk":             func() (any, error) { return s.GetAliyunAk() },
+		"aliyunSk":             func() (any, error) { return s.GetAliyunSk() },
+		"aliyunDnsFailCount":   func() (any, error) { return s.GetAliyunDnsFailCount() },
 	}
 
 	result := make(map[string]any)
@@ -914,6 +918,42 @@ func (s *SettingService) GetClashXcdnEnabled() (bool, error) {
 
 func (s *SettingService) UpdateClashXcdnEnabled(enable bool) error {
 	return s.setBool("clashXcdnEnabled", enable)
+}
+
+func (s *SettingService) GetClashXcdnMode() (string, error) {
+	mode, err := s.getString("clashXcdnMode")
+	if err != nil {
+		return "", err
+	}
+	if mode == "" {
+		return "wetest", nil
+	}
+	return mode, nil
+}
+
+func (s *SettingService) UpdateClashXcdnMode(mode string) error {
+	if mode == "" {
+		mode = "wetest"
+	}
+	return s.setString("clashXcdnMode", mode)
+}
+
+func (s *SettingService) GetClashXcdnCnameTarget() (string, error) {
+	target, err := s.getString("clashXcdnCnameTarget")
+	if err != nil {
+		return "", err
+	}
+	if target == "" {
+		return "saas.sin.fan", nil
+	}
+	return target, nil
+}
+
+func (s *SettingService) UpdateClashXcdnCnameTarget(target string) error {
+	if target == "" {
+		target = "saas.sin.fan"
+	}
+	return s.setString("clashXcdnCnameTarget", target)
 }
 
 func (s *SettingService) GetAliyunDnsInterval() (int, error) {

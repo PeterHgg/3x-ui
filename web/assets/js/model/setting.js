@@ -60,6 +60,8 @@ class AllSetting {
         this.clashCount = 0;
         this.clashNoPort = false;
         this.clashXcdnEnabled = false;
+        this.clashXcdnMode = "wetest";
+        this.clashXcdnCnameTarget = "saas.sin.fan";
         this.aliyunDnsInterval = 15;
         this.aliyunAk = "";
         this.aliyunSk = "";
