@@ -219,7 +219,11 @@ rules:
                 <template #title>优选域名</template>
                 <template #description>支持选择预设域名，也支持手动输入；默认 saas.sin.fan</template>
                 <template #control>
-                    <a-auto-complete v-model="allSetting.clashXcdnCnameTarget" :dataSource="['saas.sin.fan', 'best.cloudflare.19931110.xyz', 'best.cloudflare.182682.xyz']" :filterOption="true" :style="{ width: '100%' }" placeholder="saas.sin.fan"></a-auto-complete>
+                    <a-select v-model="allSetting.clashXcdnCnameTarget" mode="combobox" :style="{ width: '100%' }" placeholder="saas.sin.fan">
+                        <a-select-option value="saas.sin.fan">saas.sin.fan</a-select-option>
+                        <a-select-option value="xcdn.cloudflare.19931110.xyz">xcdn.cloudflare.19931110.xyz</a-select-option>
+                        <a-select-option value="xcdn.cloudflare.182682.xyz">xcdn.cloudflare.182682.xyz</a-select-option>
+                    </a-select>
                 </template>
             </a-setting-list-item>
             <a-setting-list-item paddings="small">
