@@ -87,6 +87,27 @@ func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, cou
 			Tracing:       false,
 			Interval:      12, // 12小时自动更新
 		},
+		DNS: ClashDNS{
+			Enable:       true,
+			IPv6:         false,
+			EnhancedMode: "fake-ip",
+			FakeIPRange:  "198.18.0.1/16",
+			Nameserver: []string{
+				"223.5.5.5",
+				"119.29.29.29",
+			},
+			Fallback: []string{
+				"https://dns.alidns.com/dns-query",
+				"https://doh.pub/dns-query",
+			},
+			FallbackFilter: ClashFallbackFilter{
+				GeoIP:     true,
+				GeoIPCode: "CN",
+				IPCIDR: []string{
+					"240.0.0.0/4",
+				},
+			},
+		},
 		Proxies:       allProxies,
 		ProxyGroups:   proxyGroups,
 		RuleProviders: ruleProviders,
@@ -371,13 +392,6 @@ func (s *ClashService) generateRuleProviders(origin string, customRuleProviders 
 		}
 	}
 	return map[string]ClashRuleProvider{
-		"reject": {
-			Type:     "http",
-			Behavior: "domain",
-			URL:      fmt.Sprintf("%s/rules/reject", origin),
-			Path:     "./ruleset/reject.yaml",
-			Interval: 86400,
-		},
 		"icloud": {
 			Type:     "http",
 			Behavior: "domain",
@@ -432,6 +446,13 @@ func (s *ClashService) generateRuleProviders(origin string, customRuleProviders 
 			Behavior: "ipcidr",
 			URL:      fmt.Sprintf("%s/rules/lancidr", origin),
 			Path:     "./ruleset/lancidr.yaml",
+			Interval: 86400,
+		},
+		"cncidr": {
+			Type:     "http",
+			Behavior: "ipcidr",
+			URL:      fmt.Sprintf("%s/rules/cncidr", origin),
+			Path:     "./ruleset/cncidr.yaml",
 			Interval: 86400,
 		},
 		"applications": {
@@ -502,13 +523,13 @@ func (s *ClashService) generateRules(customRules string, fullRules string) []str
 		"DOMAIN,clash.razord.top,DIRECT",
 		"DOMAIN,yacd.haishan.me,DIRECT",
 		"RULE-SET,private,DIRECT",
-		"RULE-SET,reject,REJECT",
 		"RULE-SET,icloud,DIRECT",
 		"RULE-SET,apple,DIRECT",
 		"RULE-SET,google,🚀 手动切换",
 		"RULE-SET,proxy,🚀 手动切换",
 		"RULE-SET,direct,DIRECT",
 		"RULE-SET,lancidr,DIRECT",
+		"RULE-SET,cncidr,DIRECT",
 		"RULE-SET,telegramcidr,🚀 手动切换",
 		"GEOIP,LAN,DIRECT",
 		"GEOIP,CN,DIRECT,no-resolve",
@@ -556,9 +577,6 @@ func (s *ClashService) GetRules(ruleType string) (string, error) {
 // 获取规则 URL
 func (s *ClashService) getRuleURLs(ruleType string) []string {
 	urlGroups := map[string][]string{
-		"reject": {
-			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/reject.txt",
-		},
 		"icloud": {
 			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/icloud.txt",
 		},
@@ -582,6 +600,9 @@ func (s *ClashService) getRuleURLs(ruleType string) []string {
 		},
 		"lancidr": {
 			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/lancidr.txt",
+		},
+		"cncidr": {
+			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/cncidr.txt",
 		},
 		"applications": {
 			"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/applications.txt",

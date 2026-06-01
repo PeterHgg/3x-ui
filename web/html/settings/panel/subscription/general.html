@@ -177,16 +177,19 @@
             <template #title>Rule 配置（可编辑，合并）</template>
             <template #description>一个输入框统一编辑 rule-providers 和 rules；保存时会自动拆分并同步到订阅配置</template>
             <template #control>
+                <div style="margin-bottom: 8px; text-align: right;">
+                    <a-button type="default" @click="resetClashRuleMerged">恢复默认配置</a-button>
+                </div>
                 <a-textarea v-model="clashRuleMerged" :rows="20" placeholder="rule-providers:
-  reject:
+  direct:
     type: http
     behavior: domain
-    url: 'https://example.com/rules/reject'
-    path: ./ruleset/reject.yaml
+    url: 'https://example.com/rules/direct'
+    path: ./ruleset/direct.yaml
     interval: 86400
 
 rules:
-  - 'RULE-SET,reject,REJECT'
+  - 'RULE-SET,direct,DIRECT'
   - 'MATCH,🎯 兜底规则'" style="font-family: monospace; width: 100%"></a-textarea>
             </template>
         </a-setting-list-item>
