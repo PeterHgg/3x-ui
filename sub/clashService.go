@@ -87,27 +87,6 @@ func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, cou
 			Tracing:       false,
 			Interval:      12, // 12小时自动更新
 		},
-		DNS: ClashDNS{
-			Enable:       true,
-			IPv6:         false,
-			EnhancedMode: "fake-ip",
-			FakeIPRange:  "198.18.0.1/16",
-			Nameserver: []string{
-				"223.5.5.5",
-				"119.29.29.29",
-			},
-			Fallback: []string{
-				"https://1.1.1.1/dns-query",
-				"https://8.8.8.8/dns-query",
-			},
-			FallbackFilter: ClashFallbackFilter{
-				GeoIP:     true,
-				GeoIPCode: "CN",
-				IPCIDR: []string{
-					"240.0.0.0/4",
-				},
-			},
-		},
 		Proxies:       allProxies,
 		ProxyGroups:   proxyGroups,
 		RuleProviders: ruleProviders,
@@ -526,13 +505,19 @@ func (s *ClashService) generateRules(customRules string, fullRules string) []str
 		"RULE-SET,reject,REJECT",
 		"RULE-SET,icloud,DIRECT",
 		"RULE-SET,apple,DIRECT",
+		"DOMAIN-KEYWORD,douyin,DIRECT",
+		"DOMAIN-KEYWORD,bytedance,DIRECT",
+		"DOMAIN-KEYWORD,byteimg,DIRECT",
+		"DOMAIN-KEYWORD,pstatp,DIRECT",
+		"DOMAIN-KEYWORD,snssdk,DIRECT",
+		"DOMAIN-KEYWORD,amemv,DIRECT",
 		"RULE-SET,google,🚀 手动切换",
 		"RULE-SET,proxy,🚀 手动切换",
 		"RULE-SET,direct,DIRECT",
 		"RULE-SET,lancidr,DIRECT",
 		"RULE-SET,telegramcidr,🚀 手动切换",
 		"GEOIP,LAN,DIRECT",
-		"GEOIP,CN,DIRECT",
+		"GEOIP,CN,DIRECT,no-resolve",
 		"MATCH,🎯 兜底规则",
 	)
 
