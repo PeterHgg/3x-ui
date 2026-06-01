@@ -422,7 +422,7 @@
               this.syncLogs = [...this.syncLogs, ...msg.obj];
             }
             this.syncLogs.push(isCnameMode ? '[OK] 单 CNAME 中国地区同步完成' : '[OK] Wetest 三网分线路同步完成');
-            Vue.prototype.$message['success']('{{ i18n "pages.settings.updateSuccess" }}');
+            Vue.prototype.$message['success']('{{ i18n "updateSuccess" }}');
           } else {
             if (Array.isArray(msg.obj) && msg.obj.length > 0) {
               this.syncLogs = [...this.syncLogs, ...msg.obj];
