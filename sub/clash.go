@@ -31,10 +31,20 @@ type ClashProfile struct {
 
 // DNS 配置
 type ClashDNS struct {
-	Enable       bool     `yaml:"enable"`
-	EnhancedMode string   `yaml:"enhanced-mode"`
-	FakeIPRange  string   `yaml:"fake-ip-range"`
-	Nameserver   []string `yaml:"nameserver"`
+	Enable         bool                `yaml:"enable"`
+	IPv6           bool                `yaml:"ipv6"`
+	EnhancedMode   string              `yaml:"enhanced-mode"`
+	FakeIPRange    string              `yaml:"fake-ip-range"`
+	Nameserver     []string            `yaml:"nameserver"`
+	Fallback       []string            `yaml:"fallback,omitempty"`
+	FallbackFilter ClashFallbackFilter `yaml:"fallback-filter,omitempty"`
+}
+
+// Clash DNS Fallback-Filter 配置
+type ClashFallbackFilter struct {
+	GeoIP     bool     `yaml:"geoip"`
+	GeoIPCode string   `yaml:"geoip-code"`
+	IPCIDR    []string `yaml:"ipcidr"`
 }
 
 // Clash 代理节点
@@ -118,6 +128,7 @@ func (c *ClashConfig) ToYAML() string {
 	if c.DNS.Enable {
 		sb.WriteString("\ndns:\n")
 		sb.WriteString("  enable: true\n")
+		sb.WriteString(fmt.Sprintf("  ipv6: %t\n", c.DNS.IPv6))
 		sb.WriteString(fmt.Sprintf("  enhanced-mode: %s\n", c.DNS.EnhancedMode))
 		if c.DNS.FakeIPRange != "" {
 			sb.WriteString(fmt.Sprintf("  fake-ip-range: %s\n", c.DNS.FakeIPRange))
@@ -125,6 +136,23 @@ func (c *ClashConfig) ToYAML() string {
 		sb.WriteString("  nameserver:\n")
 		for _, ns := range c.DNS.Nameserver {
 			sb.WriteString(fmt.Sprintf("    - %s\n", ns))
+		}
+		if len(c.DNS.Fallback) > 0 {
+			sb.WriteString("  fallback:\n")
+			for _, fb := range c.DNS.Fallback {
+				sb.WriteString(fmt.Sprintf("    - %s\n", fb))
+			}
+		}
+		sb.WriteString("  fallback-filter:\n")
+		sb.WriteString(fmt.Sprintf("    geoip: %t\n", c.DNS.FallbackFilter.GeoIP))
+		if c.DNS.FallbackFilter.GeoIPCode != "" {
+			sb.WriteString(fmt.Sprintf("    geoip-code: %s\n", c.DNS.FallbackFilter.GeoIPCode))
+		}
+		if len(c.DNS.FallbackFilter.IPCIDR) > 0 {
+			sb.WriteString("    ipcidr:\n")
+			for _, cidr := range c.DNS.FallbackFilter.IPCIDR {
+				sb.WriteString(fmt.Sprintf("      - %s\n", cidr))
+			}
 		}
 	}
 
