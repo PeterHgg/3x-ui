@@ -1069,6 +1069,22 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 		// We update ALL records that share this email and the identified inboundID (master/slave).
 		// We also sync the master's quota settings to slaves for consistency.
 		nowMs := time.Now().UnixMilli()
+		var dbClientTraffic xray.ClientTraffic
+		if err := tx.Model(&xray.ClientTraffic{}).
+			Where("email = ? AND inbound_id = ?", email, inboundID).
+			First(&dbClientTraffic).Error; err == nil && dbClientTraffic.ExpiryTime < 0 {
+			if _, err = s.adjustTraffics(tx, []*xray.ClientTraffic{&dbClientTraffic}); err != nil {
+				return err
+			}
+			if err = tx.Model(&xray.ClientTraffic{}).
+				Where("email = ? AND inbound_id = ?", email, inboundID).
+				Update("expiry_time", dbClientTraffic.ExpiryTime).Error; err != nil {
+				return err
+			}
+		} else if err != nil && err != gorm.ErrRecordNotFound {
+			return err
+		}
+
 		res := tx.Model(&xray.ClientTraffic{}).
 			Where("(email = ? OR email = ?) AND (inbound_id = ? OR inbound_id IN (SELECT id FROM inbounds WHERE sync_source_id = ?))", email, fullEmail, inboundID, inboundID).
 			Updates(map[string]any{
