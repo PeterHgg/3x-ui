@@ -143,15 +143,17 @@ func (c *ClashConfig) ToYAML() string {
 				sb.WriteString(fmt.Sprintf("    - %s\n", fb))
 			}
 		}
-		sb.WriteString("  fallback-filter:\n")
-		sb.WriteString(fmt.Sprintf("    geoip: %t\n", c.DNS.FallbackFilter.GeoIP))
-		if c.DNS.FallbackFilter.GeoIPCode != "" {
-			sb.WriteString(fmt.Sprintf("    geoip-code: %s\n", c.DNS.FallbackFilter.GeoIPCode))
-		}
-		if len(c.DNS.FallbackFilter.IPCIDR) > 0 {
-			sb.WriteString("    ipcidr:\n")
-			for _, cidr := range c.DNS.FallbackFilter.IPCIDR {
-				sb.WriteString(fmt.Sprintf("      - %s\n", cidr))
+		if c.DNS.FallbackFilter.GeoIP || c.DNS.FallbackFilter.GeoIPCode != "" || len(c.DNS.FallbackFilter.IPCIDR) > 0 {
+			sb.WriteString("  fallback-filter:\n")
+			sb.WriteString(fmt.Sprintf("    geoip: %t\n", c.DNS.FallbackFilter.GeoIP))
+			if c.DNS.FallbackFilter.GeoIPCode != "" {
+				sb.WriteString(fmt.Sprintf("    geoip-code: %s\n", c.DNS.FallbackFilter.GeoIPCode))
+			}
+			if len(c.DNS.FallbackFilter.IPCIDR) > 0 {
+				sb.WriteString("    ipcidr:\n")
+				for _, cidr := range c.DNS.FallbackFilter.IPCIDR {
+					sb.WriteString(fmt.Sprintf("      - %s\n", cidr))
+				}
 			}
 		}
 	}

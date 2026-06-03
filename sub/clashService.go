@@ -96,17 +96,6 @@ func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, cou
 				"223.5.5.5",
 				"119.29.29.29",
 			},
-			Fallback: []string{
-				"https://dns.alidns.com/dns-query",
-				"https://doh.pub/dns-query",
-			},
-			FallbackFilter: ClashFallbackFilter{
-				GeoIP:     true,
-				GeoIPCode: "CN",
-				IPCIDR: []string{
-					"240.0.0.0/4",
-				},
-			},
 		},
 		Proxies:       allProxies,
 		ProxyGroups:   proxyGroups,
