@@ -87,16 +87,6 @@ func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, cou
 			Tracing:       false,
 			Interval:      12, // 12小时自动更新
 		},
-		DNS: ClashDNS{
-			Enable:       true,
-			IPv6:         false,
-			EnhancedMode: "fake-ip",
-			FakeIPRange:  "198.18.0.1/16",
-			Nameserver: []string{
-				"223.5.5.5",
-				"119.29.29.29",
-			},
-		},
 		Proxies:       allProxies,
 		ProxyGroups:   proxyGroups,
 		RuleProviders: ruleProviders,
