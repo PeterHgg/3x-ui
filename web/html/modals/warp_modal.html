@@ -142,7 +142,7 @@
                             secretKey: warpModal.warpData.private_key,
                             address: this.getAddresses(config.interface.addresses),
                             reserved: this.getResolved(config.client_id),
-                            domainStrategy: 'ForceIP',
+                            domainStrategy: 'ForceIPv6v4',
                             peers: [{
                                 publicKey: peer.public_key,
                                 endpoint: peer.endpoint.host,
