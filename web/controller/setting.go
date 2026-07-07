@@ -5,11 +5,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/mhsanaei/3x-ui/v2/util/crypto"
-	"github.com/mhsanaei/3x-ui/v2/web/entity"
-	"github.com/mhsanaei/3x-ui/v2/web/job"
-	"github.com/mhsanaei/3x-ui/v2/web/service"
-	"github.com/mhsanaei/3x-ui/v2/web/session"
+	"github.com/mhsanaei/3x-ui/v3/util/crypto"
+	"github.com/mhsanaei/3x-ui/v3/web/entity"
+	"github.com/mhsanaei/3x-ui/v3/web/middleware"
+	"github.com/mhsanaei/3x-ui/v3/web/service"
+	"github.com/mhsanaei/3x-ui/v3/web/session"
 
 	"github.com/gin-gonic/gin"
 )
@@ -24,9 +24,10 @@ type updateUserForm struct {
 
 // SettingController handles settings and user management operations.
 type SettingController struct {
-	settingService service.SettingService
-	userService    service.UserService
-	panelService   service.PanelService
+	settingService  service.SettingService
+	userService     service.UserService
+	panelService    service.PanelService
+	apiTokenService service.ApiTokenService
 }
 
 // NewSettingController creates a new SettingController and initializes its routes.
@@ -45,114 +46,11 @@ func (a *SettingController) initRouter(g *gin.RouterGroup) {
 	g.POST("/update", a.updateSetting)
 	g.POST("/updateUser", a.updateUser)
 	g.POST("/restartPanel", a.restartPanel)
-	g.POST("/updateAliyunDNS", a.updateAliyunDNS)
-	g.GET("/aliyunDNSStatus", a.getAliyunDNSStatus)
 	g.GET("/getDefaultJsonConfig", a.getDefaultXrayConfig)
-}
-
-// updateAliyunDNS triggers a manual sync of Aliyun DNS records for xcdn nodes.
-func (a *SettingController) updateAliyunDNS(c *gin.Context) {
-	logs, err := job.NewAliyunDNSJob().Sync()
-	if err != nil {
-		jsonMsgObj(c, "Aliyun DNS sync failed", logs, err)
-	} else {
-		jsonObj(c, logs, nil)
-	}
-}
-
-type aliyunDNSStatusItem struct {
-	Line            string `json:"line"`
-	Type            string `json:"type"`
-	Value           string `json:"value"`
-	UpdateTimestamp string `json:"updateTimestamp"`
-}
-
-type aliyunDNSStatusResponse struct {
-	Domain        string                `json:"domain"`
-	RecordName    string                `json:"recordName"`
-	LastUpdatedAt string                `json:"lastUpdatedAt"`
-	Records       []aliyunDNSStatusItem `json:"records"`
-}
-
-func (a *SettingController) getAliyunDNSStatus(c *gin.Context) {
-	enabled, _ := a.settingService.GetClashXcdnEnabled()
-	if !enabled {
-		jsonMsg(c, "XCDN 未启用", errors.New("XCDN not enabled"))
-		return
-	}
-
-	ak, _ := a.settingService.GetAliyunAk()
-	sk, _ := a.settingService.GetAliyunSk()
-	if ak == "" || sk == "" {
-		jsonMsg(c, "Aliyun AK/SK 未配置，无法查询", errors.New("aliyun credentials missing"))
-		return
-	}
-
-	mainDomain, _ := a.settingService.GetClashDomain()
-	if mainDomain == "" {
-		mainDomain, _ = a.settingService.GetSubDomain()
-	}
-	if mainDomain == "" {
-		jsonMsg(c, "Clash 域名未配置", errors.New("clash domain not configured"))
-		return
-	}
-
-	prefix, _ := a.settingService.GetClashPrefix()
-	if prefix == "" {
-		prefix = "cdn"
-	}
-	recordName := "x" + prefix
-
-	client := job.NewAliyunDNSClient(ak, sk)
-	records, err := client.GetRecords(mainDomain, recordName, "")
-	if err != nil {
-		jsonMsg(c, "获取 Aliyun DNS 记录失败", err)
-		return
-	}
-
-	resp := aliyunDNSStatusResponse{
-		Domain:     mainDomain,
-		RecordName: recordName,
-		Records:    make([]aliyunDNSStatusItem, 0, len(records)),
-	}
-
-	var lastUpdatedAt int64
-	for _, r := range records {
-		updateTimestamp := ""
-		if r.UpdateTimestamp != "" {
-			updateTimestamp = r.UpdateTimestamp.String()
-		}
-		if updateTimestamp == "" {
-			updateTimestamp = r.UpdateTime
-		}
-		if updateTimestamp != "" {
-			if ts, err := strconv.ParseInt(updateTimestamp, 10, 64); err == nil {
-				if ts > lastUpdatedAt {
-					lastUpdatedAt = ts
-				}
-			}
-		}
-		resp.Records = append(resp.Records, aliyunDNSStatusItem{
-			Line:            r.Line,
-			Type:            r.Type,
-			Value:           r.Value,
-			UpdateTimestamp: updateTimestamp,
-		})
-	}
-
-	filtered := make([]aliyunDNSStatusItem, 0, len(resp.Records))
-	for _, r := range resp.Records {
-		if r.Value != "" {
-			filtered = append(filtered, r)
-		}
-	}
-	resp.Records = filtered
-
-	if lastUpdatedAt > 0 {
-		resp.LastUpdatedAt = strconv.FormatInt(lastUpdatedAt, 10)
-	}
-
-	jsonObj(c, resp, nil)
+	g.GET("/apiTokens", a.listApiTokens)
+	g.POST("/apiTokens/create", a.createApiToken)
+	g.POST("/apiTokens/delete/:id", a.deleteApiToken)
+	g.POST("/apiTokens/setEnabled/:id", a.setApiTokenEnabled)
 }
 
 // getAllSetting retrieves all current settings.
@@ -177,13 +75,17 @@ func (a *SettingController) getDefaultSettings(c *gin.Context) {
 
 // updateSetting updates all settings with the provided data.
 func (a *SettingController) updateSetting(c *gin.Context) {
-	allSetting := &entity.AllSetting{}
-	err := c.ShouldBind(allSetting)
-	if err != nil {
-		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), err)
+	allSetting, ok := middleware.BindAndValidate[entity.AllSetting](c)
+	if !ok {
 		return
 	}
-	err = a.settingService.UpdateAllSetting(allSetting)
+	oldTwoFactor, twoFactorErr := a.settingService.GetTwoFactorEnable()
+	err := a.settingService.UpdateAllSetting(allSetting)
+	if err == nil && twoFactorErr == nil && !oldTwoFactor && allSetting.TwoFactorEnable {
+		if bumpErr := a.userService.BumpLoginEpoch(); bumpErr != nil {
+			err = bumpErr
+		}
+	}
 	jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), err)
 }
 
@@ -208,7 +110,9 @@ func (a *SettingController) updateUser(c *gin.Context) {
 	if err == nil {
 		user.Username = form.NewUsername
 		user.Password, _ = crypto.HashPasswordAsBcrypt(form.NewPassword)
-		session.SetLoginUser(c, user)
+		if saveErr := session.SetLoginUser(c, user); saveErr != nil {
+			err = saveErr
+		}
 	}
 	jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifyUser"), err)
 }
@@ -227,4 +131,58 @@ func (a *SettingController) getDefaultXrayConfig(c *gin.Context) {
 		return
 	}
 	jsonObj(c, defaultJsonConfig, nil)
+}
+
+type apiTokenCreateForm struct {
+	Name string `json:"name" form:"name"`
+}
+
+type apiTokenEnabledForm struct {
+	Enabled bool `json:"enabled" form:"enabled"`
+}
+
+func (a *SettingController) listApiTokens(c *gin.Context) {
+	rows, err := a.apiTokenService.List()
+	if err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.getSettings"), err)
+		return
+	}
+	jsonObj(c, rows, nil)
+}
+
+func (a *SettingController) createApiToken(c *gin.Context) {
+	form := &apiTokenCreateForm{}
+	if err := c.ShouldBind(form); err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), err)
+		return
+	}
+	row, err := a.apiTokenService.Create(form.Name)
+	if err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), err)
+		return
+	}
+	jsonObj(c, row, nil)
+}
+
+func (a *SettingController) deleteApiToken(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), err)
+		return
+	}
+	jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), a.apiTokenService.Delete(id))
+}
+
+func (a *SettingController) setApiTokenEnabled(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), err)
+		return
+	}
+	form := &apiTokenEnabledForm{}
+	if bindErr := c.ShouldBind(form); bindErr != nil {
+		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), bindErr)
+		return
+	}
+	jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), a.apiTokenService.SetEnabled(id, form.Enabled))
 }

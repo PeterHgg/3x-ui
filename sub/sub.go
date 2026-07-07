@@ -5,41 +5,24 @@ package sub
 import (
 	"context"
 	"crypto/tls"
-	"html/template"
 	"io"
 	"io/fs"
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
-	"github.com/mhsanaei/3x-ui/v2/logger"
-	"github.com/mhsanaei/3x-ui/v2/util/common"
-	webpkg "github.com/mhsanaei/3x-ui/v2/web"
-	"github.com/mhsanaei/3x-ui/v2/web/locale"
-	"github.com/mhsanaei/3x-ui/v2/web/middleware"
-	"github.com/mhsanaei/3x-ui/v2/web/network"
-	"github.com/mhsanaei/3x-ui/v2/web/service"
+	"github.com/mhsanaei/3x-ui/v3/logger"
+	"github.com/mhsanaei/3x-ui/v3/util/common"
+	"github.com/mhsanaei/3x-ui/v3/web/locale"
+	"github.com/mhsanaei/3x-ui/v3/web/middleware"
+	"github.com/mhsanaei/3x-ui/v3/web/network"
+	"github.com/mhsanaei/3x-ui/v3/web/service"
 
 	"github.com/gin-gonic/gin"
 )
-
-// setEmbeddedTemplates parses and sets embedded templates on the engine
-func setEmbeddedTemplates(engine *gin.Engine) error {
-	t, err := template.New("").Funcs(engine.FuncMap).ParseFS(
-		webpkg.EmbeddedHTML(),
-		"html/common/page.html",
-		"html/component/aThemeSwitch.html",
-		"html/settings/panel/subscription/subpage.html",
-	)
-	if err != nil {
-		return err
-	}
-	engine.SetHTMLTemplate(t)
-	return nil
-}
 
 // Server represents the subscription server that serves subscription links and JSON configurations.
 type Server struct {
@@ -91,8 +74,17 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 		return nil, err
 	}
 
-	// Determine if JSON subscription endpoint is enabled
+	ClashPath, err := s.settingService.GetSubClashPath()
+	if err != nil {
+		return nil, err
+	}
+
 	subJsonEnable, err := s.settingService.GetSubJsonEnable()
+	if err != nil {
+		return nil, err
+	}
+
+	subClashEnable, err := s.settingService.GetSubClashEnable()
 	if err != nil {
 		return nil, err
 	}
@@ -120,22 +112,12 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 
 	RemarkModel, err := s.settingService.GetRemarkModel()
 	if err != nil {
-		RemarkModel = "-ieo"
+		RemarkModel = "-io"
 	}
 
 	SubUpdates, err := s.settingService.GetSubUpdates()
 	if err != nil {
 		SubUpdates = "10"
-	}
-
-	SubJsonFragment, err := s.settingService.GetSubJsonFragment()
-	if err != nil {
-		SubJsonFragment = ""
-	}
-
-	SubJsonNoises, err := s.settingService.GetSubJsonNoises()
-	if err != nil {
-		SubJsonNoises = ""
 	}
 
 	SubJsonMux, err := s.settingService.GetSubJsonMux()
@@ -146,6 +128,21 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	SubJsonRules, err := s.settingService.GetSubJsonRules()
 	if err != nil {
 		SubJsonRules = ""
+	}
+
+	SubJsonFinalMask, err := s.settingService.GetSubJsonFinalMask()
+	if err != nil {
+		SubJsonFinalMask = ""
+	}
+
+	SubClashEnableRouting, err := s.settingService.GetSubClashEnableRouting()
+	if err != nil {
+		SubClashEnableRouting = false
+	}
+
+	SubClashRules, err := s.settingService.GetSubClashRules()
+	if err != nil {
+		SubClashRules = ""
 	}
 
 	SubTitle, err := s.settingService.GetSubTitle()
@@ -181,45 +178,25 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	// set per-request localizer from headers/cookies
 	engine.Use(locale.LocalizerMiddleware())
 
-	// register i18n function similar to web server
-	i18nWebFunc := func(key string, params ...string) string {
-		return locale.I18n(locale.Web, key, params...)
-	}
-	engine.SetFuncMap(map[string]any{"i18n": i18nWebFunc})
-
-	// Templates: prefer embedded; fallback to disk if necessary
-	if err := setEmbeddedTemplates(engine); err != nil {
-		logger.Warning("sub: failed to parse embedded templates:", err)
-		if files, derr := s.getHtmlFiles(); derr == nil {
-			engine.LoadHTMLFiles(files...)
-		} else {
-			logger.Error("sub: no templates available (embedded parse and disk load failed)", err, derr)
-		}
-	}
-
-	// Assets: use disk if present, fallback to embedded
-	// Serve under both root (/assets) and under the subscription path prefix (LinksPath + "assets")
-	// so reverse proxies with a URI prefix can load assets correctly.
-	// Determine LinksPath earlier to compute prefixed assets mount.
+	// Mount the Vite-built dist/assets/ so the subscription page's JS/CSS
+	// bundles load from `/assets/...`. Also mount the same FS under the
+	// subscription path prefix (LinksPath + "assets") so reverse proxies
+	// running the panel under a URI prefix can resolve those URLs too.
 	// Note: LinksPath always starts and ends with "/" (validated in settings).
 	var linksPathForAssets string
 	if LinksPath == "/" {
 		linksPathForAssets = "/assets"
 	} else {
-		// ensure single slash join
 		linksPathForAssets = strings.TrimRight(LinksPath, "/") + "/assets"
 	}
 
-	// Mount assets in multiple paths to handle different URL patterns
 	var assetsFS http.FileSystem
-	if _, err := os.Stat("web/assets"); err == nil {
-		assetsFS = http.FS(os.DirFS("web/assets"))
+	if _, err := os.Stat("web/dist/assets"); err == nil {
+		assetsFS = http.FS(os.DirFS("web/dist/assets"))
+	} else if subFS, err := fs.Sub(distFS, "dist/assets"); err == nil {
+		assetsFS = http.FS(subFS)
 	} else {
-		if subFS, err := fs.Sub(webpkg.EmbeddedAssets(), "assets"); err == nil {
-			assetsFS = http.FS(subFS)
-		} else {
-			logger.Error("sub: failed to mount embedded assets:", err)
-		}
+		logger.Error("sub: failed to mount embedded dist assets:", err)
 	}
 
 	if assetsFS != nil {
@@ -228,19 +205,17 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 			engine.StaticFS(linksPathForAssets, assetsFS)
 		}
 
-		// Add middleware to handle dynamic asset paths with subid
+		// Browser may resolve subpage assets relative to the request URL —
+		// /sub/<basePath>/<subId>/assets/... — so route those to the same FS.
 		if LinksPath != "/" {
 			engine.Use(func(c *gin.Context) {
 				path := c.Request.URL.Path
-				// Check if this is an asset request with subid pattern: /sub/path/{subid}/assets/...
 				pathPrefix := strings.TrimRight(LinksPath, "/") + "/"
 				if strings.HasPrefix(path, pathPrefix) && strings.Contains(path, "/assets/") {
-					// Extract the asset path after /assets/
-					assetsIndex := strings.Index(path, "/assets/")
-					if assetsIndex != -1 {
-						assetPath := path[assetsIndex+8:] // +8 to skip "/assets/"
+					_, after, ok := strings.Cut(path, "/assets/")
+					if ok {
+						assetPath := after // +8 to skip "/assets/"
 						if assetPath != "" {
-							// Serve the asset file
 							c.FileFromFS(assetPath, assetsFS)
 							c.Abort()
 							return
@@ -255,35 +230,11 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	g := engine.Group("/")
 
 	s.sub = NewSUBController(
-		g, LinksPath, JsonPath, subJsonEnable, Encrypt, ShowInfo, RemarkModel, SubUpdates,
-		SubJsonFragment, SubJsonNoises, SubJsonMux, SubJsonRules, SubTitle, SubSupportUrl,
+		g, LinksPath, JsonPath, ClashPath, subJsonEnable, subClashEnable, Encrypt, ShowInfo, RemarkModel, SubUpdates,
+		SubJsonMux, SubJsonRules, SubJsonFinalMask, SubClashEnableRouting, SubClashRules, SubTitle, SubSupportUrl,
 		SubProfileUrl, SubAnnounce, SubEnableRouting, SubRoutingRules)
 
 	return engine, nil
-}
-
-// getHtmlFiles loads templates from local folder (used in debug mode)
-func (s *Server) getHtmlFiles() ([]string, error) {
-	dir, _ := os.Getwd()
-	files := []string{}
-	// common layout
-	common := filepath.Join(dir, "web", "html", "common", "page.html")
-	if _, err := os.Stat(common); err == nil {
-		files = append(files, common)
-	}
-	// components used
-	theme := filepath.Join(dir, "web", "html", "component", "aThemeSwitch.html")
-	if _, err := os.Stat(theme); err == nil {
-		files = append(files, theme)
-	}
-	// page itself
-	page := filepath.Join(dir, "web", "html", "subpage.html")
-	if _, err := os.Stat(page); err == nil {
-		files = append(files, page)
-	} else {
-		return nil, err
-	}
-	return files, nil
 }
 
 // Start initializes and starts the subscription server with configured settings.
@@ -316,19 +267,6 @@ func (s *Server) Start() (err error) {
 	if err != nil {
 		return err
 	}
-
-	// 如果订阅服务没有配置专用证书，则使用面板通用证书
-	if certFile == "" || keyFile == "" {
-		defaultCert, err := s.settingService.GetCertFile()
-		if err == nil && defaultCert != "" {
-			certFile = defaultCert
-		}
-		defaultKey, err := s.settingService.GetKeyFile()
-		if err == nil && defaultKey != "" {
-			keyFile = defaultKey
-		}
-	}
-
 	listen, err := s.settingService.GetSubListen()
 	if err != nil {
 		return err
@@ -380,7 +318,9 @@ func (s *Server) Stop() error {
 	var err1 error
 	var err2 error
 	if s.httpServer != nil {
-		err1 = s.httpServer.Shutdown(s.ctx)
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer shutdownCancel()
+		err1 = s.httpServer.Shutdown(shutdownCtx)
 	}
 	if s.listener != nil {
 		err2 = s.listener.Close()

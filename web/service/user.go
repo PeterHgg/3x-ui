@@ -3,13 +3,11 @@ package service
 import (
 	"errors"
 
-	"time"
-
-	"github.com/mhsanaei/3x-ui/v2/database"
-	"github.com/mhsanaei/3x-ui/v2/database/model"
-	"github.com/mhsanaei/3x-ui/v2/logger"
-	"github.com/mhsanaei/3x-ui/v2/util/crypto"
-	ldaputil "github.com/mhsanaei/3x-ui/v2/util/ldap"
+	"github.com/mhsanaei/3x-ui/v3/database"
+	"github.com/mhsanaei/3x-ui/v3/database/model"
+	"github.com/mhsanaei/3x-ui/v3/logger"
+	"github.com/mhsanaei/3x-ui/v3/util/crypto"
+	ldaputil "github.com/mhsanaei/3x-ui/v3/util/ldap"
 	"github.com/xlzd/gotp"
 	"gorm.io/gorm"
 )
@@ -35,7 +33,7 @@ func (s *UserService) GetFirstUser() (*model.User, error) {
 	return user, nil
 }
 
-func (s *UserService) CheckUser(username string, password string, twoFactorCode string) *model.User {
+func (s *UserService) CheckUser(username string, password string, twoFactorCode string) (*model.User, error) {
 	db := database.GetDB()
 
 	user := &model.User{}
@@ -45,17 +43,16 @@ func (s *UserService) CheckUser(username string, password string, twoFactorCode 
 		First(user).
 		Error
 	if err == gorm.ErrRecordNotFound {
-		return nil
+		return nil, errors.New("invalid credentials")
 	} else if err != nil {
 		logger.Warning("check user err:", err)
-		return nil
+		return nil, err
 	}
 
-	// If LDAP enabled and local password check fails, attempt LDAP auth
 	if !crypto.CheckPasswordHash(user.Password, password) {
 		ldapEnabled, _ := s.settingService.GetLdapEnable()
 		if !ldapEnabled {
-			return nil
+			return nil, errors.New("invalid credentials")
 		}
 
 		host, _ := s.settingService.GetLdapHost()
@@ -79,15 +76,14 @@ func (s *UserService) CheckUser(username string, password string, twoFactorCode 
 		}
 		ok, err := ldaputil.AuthenticateUser(cfg, username, password)
 		if err != nil || !ok {
-			return nil
+			return nil, errors.New("invalid credentials")
 		}
-		// On successful LDAP auth, continue 2FA checks below
 	}
 
 	twoFactorEnable, err := s.settingService.GetTwoFactorEnable()
 	if err != nil {
 		logger.Warning("check two factor err:", err)
-		return nil
+		return nil, err
 	}
 
 	if twoFactorEnable {
@@ -95,28 +91,23 @@ func (s *UserService) CheckUser(username string, password string, twoFactorCode 
 
 		if err != nil {
 			logger.Warning("check two factor token err:", err)
-			return nil
+			return nil, err
 		}
 
-		// 允许时间漂移（前后各4个30秒窗口，即±120秒）
-		totp := gotp.NewDefaultTOTP(twoFactorToken)
-		now := time.Now().Unix()
-		isValid := totp.Verify(twoFactorCode, now) ||
-			totp.Verify(twoFactorCode, now-30) ||
-			totp.Verify(twoFactorCode, now+30) ||
-			totp.Verify(twoFactorCode, now-60) ||
-			totp.Verify(twoFactorCode, now+60) ||
-			totp.Verify(twoFactorCode, now-90) ||
-			totp.Verify(twoFactorCode, now+90) ||
-			totp.Verify(twoFactorCode, now-120) ||
-			totp.Verify(twoFactorCode, now+120)
-
-		if !isValid {
-			return nil
+		if gotp.NewDefaultTOTP(twoFactorToken).Now() != twoFactorCode {
+			return nil, errors.New("invalid 2fa code")
 		}
 	}
 
-	return user
+	return user, nil
+}
+
+func (s *UserService) BumpLoginEpoch() error {
+	db := database.GetDB()
+	return db.Model(model.User{}).
+		Where("1 = 1").
+		Update("login_epoch", gorm.Expr("login_epoch + 1")).
+		Error
 }
 
 func (s *UserService) UpdateUser(id int, username string, password string) error {
@@ -139,7 +130,11 @@ func (s *UserService) UpdateUser(id int, username string, password string) error
 
 	return db.Model(model.User{}).
 		Where("id = ?", id).
-		Updates(map[string]any{"username": username, "password": hashedPassword}).
+		Updates(map[string]any{
+			"username":    username,
+			"password":    hashedPassword,
+			"login_epoch": gorm.Expr("login_epoch + 1"),
+		}).
 		Error
 }
 
@@ -167,5 +162,6 @@ func (s *UserService) UpdateFirstUser(username string, password string) error {
 	}
 	user.Username = username
 	user.Password = hashedPassword
+	user.LoginEpoch++
 	return db.Save(user).Error
 }

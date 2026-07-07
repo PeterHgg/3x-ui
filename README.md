@@ -1,3 +1,5 @@
+[English](/README.md) | [فارسی](/README.fa_IR.md) | [العربية](/README.ar_EG.md) | [中文](/README.zh_CN.md) | [Español](/README.es_ES.md) | [Русский](/README.ru_RU.md) | [Türkçe](/README.tr_TR.md)
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="./media/3x-ui-dark.png">
@@ -5,161 +7,171 @@
   </picture>
 </p>
 
-[![Release](https://img.shields.io/github/v/release/PeterHgg/3x-ui.svg)](https://github.com/PeterHgg/3x-ui/releases)
-[![Build](https://img.shields.io/github/actions/workflow/status/PeterHgg/3x-ui/release.yml.svg)](https://github.com/PeterHgg/3x-ui/actions)
-[![GO Version](https://img.shields.io/github/go-mod/go-version/PeterHgg/3x-ui.svg)](#)
-[![Downloads](https://img.shields.io/github/downloads/PeterHgg/3x-ui/total.svg)](https://github.com/PeterHgg/3x-ui/releases/latest)
-[![License](https://img.shields.io/badge/license-GPL%20V3-blue.svg?longCache=true)](https://www.gnu.org/licenses/gpl-3.0.en.html)
+<p align="center">
+  <a href="https://github.com/MHSanaei/3x-ui/releases"><img src="https://img.shields.io/github/v/release/mhsanaei/3x-ui" alt="Release"></a>
+  <a href="https://github.com/MHSanaei/3x-ui/actions"><img src="https://img.shields.io/github/actions/workflow/status/mhsanaei/3x-ui/release.yml.svg" alt="Build"></a>
+  <a href="#"><img src="https://img.shields.io/github/go-mod/go-version/mhsanaei/3x-ui.svg" alt="GO Version"></a>
+  <a href="https://github.com/MHSanaei/3x-ui/releases/latest"><img src="https://img.shields.io/github/downloads/mhsanaei/3x-ui/total.svg" alt="Downloads"></a>
+  <a href="https://www.gnu.org/licenses/gpl-3.0.en.html"><img src="https://img.shields.io/badge/license-GPL%20V3-blue.svg?longCache=true" alt="License"></a>
+  <a href="https://pkg.go.dev/github.com/mhsanaei/3x-ui/v3"><img src="https://pkg.go.dev/badge/github.com/mhsanaei/3x-ui/v3.svg" alt="Go Reference"></a>
+  <a href="https://goreportcard.com/report/github.com/mhsanaei/3x-ui/v3"><img src="https://goreportcard.com/badge/github.com/mhsanaei/3x-ui/v3" alt="Go Report Card"></a>
+</p>
 
-**3X-UI** — 先进的开源 Web 管理面板，专为管理 Xray-core 服务器而设计。它提供了用户友好的界面，用于配置和监控各种 VPN 和代理协议。
+**3X-UI** is an advanced, open-source web control panel for managing [Xray-core](https://github.com/XTLS/Xray-core) servers. It provides a clean, multi-language interface for deploying, configuring, and monitoring a wide range of proxy and VPN protocols — from a single VPS to multi-node deployments.
+
+Built as an enhanced fork of the original X-UI project, 3X-UI adds broader protocol support, improved stability, per-client traffic accounting, and many quality-of-life features.
 
 > [!IMPORTANT]
-> 本项目仅供个人学习使用，请勿用于非法用途，也请勿在生产环境中使用。
+> This project is intended for personal use only. Please do not use it for illegal purposes or in a production environment.
 
-作为原始 X-UI 项目的增强分支，3X-UI 提供了改进的稳定性、更广泛的协议支持和额外的功能。
+## Features
 
-## 特色功能
+- **Multi-protocol inbounds** — VLESS, VMess, Trojan, Shadowsocks, WireGuard, Hysteria2, HTTP, SOCKS (Mixed), Dokodemo-door / Tunnel, and TUN.
+- **Modern transports & security** — TCP (Raw), mKCP, WebSocket, gRPC, HTTPUpgrade, and XHTTP, secured with TLS, XTLS, and REALITY.
+- **Fallbacks** — serve multiple protocols on a single port (e.g. VLESS and Trojan on 443) using Xray's fallback support.
+- **Per-client management** — traffic quotas, expiry dates, IP limits, live online status, and one-click share links, QR codes, and subscriptions.
+- **Traffic statistics** — per inbound, per client, and per outbound, with reset controls.
+- **Multi-node support** — manage and scale across multiple servers from a single panel.
+- **Outbound & routing** — WARP, NordVPN, custom routing rules, load balancers, and outbound proxy chaining.
+- **Built-in subscription server** with multiple output formats.
+- **Telegram bot** for remote monitoring and management.
+- **RESTful API** with in-panel Swagger documentation.
+- **Flexible storage** — SQLite (default) or PostgreSQL.
+- **13 UI languages** with dark and light themes.
+- **Fail2ban integration** for enforcing per-client IP limits.
 
-### 主从节点同步 (v2.8.x+)
-- ✅ **一致性保障**：主从自动校验与同步，断连可恢复，确保用户数据一致
-- ✅ **统一流量核算**：跨节点聚合统计与配额管理，避免流量错算/漏算
-- ✅ **安全可控**：从节点强制只读，实时同步状态提示
+## Screenshots
 
-### Clash 定制订阅 (v2.8.x+)
-> [!NOTE]
-> 本配置专用于 Cloudflare 优选架构，非通用订阅转换器。
+<details>
+<summary>Click to expand</summary>
 
-- ✅ **Cloudflare 深度适配**：自动生成 CDN 节点，强制 443 端口，支持入站备注智能分组
-- ✅ **自动化订阅配置**：同步 WS 路径，支持隐藏端口与订阅信息自动设置
-- ✅ **高级规则系统**：内置可视化规则编辑器，集成 Loyalsoldier/clash-rules
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./media/01-overview-dark.png">
+  <img alt="Overview" src="./media/01-overview-light.png">
+</picture>
 
-### 其他增强
-- ✅ **诊断与日志**：更细粒度诊断日志，快速定位同步与流量问题
-- ✅ **界面与体验**：全新登录页、通知层级优化、TOTP 容错增强
-- ✅ **性能与安全**：客户端管理模块优化查询，IP 审计与错误处理增强
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./media/02-add-inbound-dark.png">
+  <img alt="Inbounds" src="./media/02-add-inbound-light.png">
+</picture>
 
-**配置位置**：面板设置 → 订阅设置 → Clash 订阅配置
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./media/03-add-client-dark.png">
+  <img alt="Add client" src="./media/03-add-client-light.png">
+</picture>
 
-## 快速开始
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./media/05-add-nodes-dark.png">
+  <img alt="Configs" src="./media/05-add-nodes-light.png">
+</picture>
 
-### 一键安装
+</details>
+
+## Quick Start
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/PeterHgg/3x-ui/main/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)
 ```
 
-### 一键更新
+During installation a random username, password, and access path are generated. After installation, run `x-ui` to open the management menu, where you can start/stop the service, view or reset your login credentials, manage SSL certificates, and more.
+
+For full documentation, please visit the [project Wiki](https://github.com/MHSanaei/3x-ui/wiki).
+
+## Supported Platforms
+
+**Operating systems:** Ubuntu, Debian, Armbian, Fedora, CentOS, RHEL, AlmaLinux, Rocky Linux, Oracle Linux, Amazon Linux, Virtuozzo, Arch, Manjaro, Parch, openSUSE (Tumbleweed / Leap), Alpine, and Windows.
+
+**Architectures:** `amd64` · `386` · `arm64` (aarch64) · `armv7` · `armv6` · `armv5` · `s390x`.
+
+## Database Options
+
+3X-UI supports two backends, chosen during the install:
+
+- **SQLite** (default) — a single file at `/etc/x-ui/x-ui.db`. Zero setup, ideal for small and medium deployments.
+- **PostgreSQL** — recommended for high client counts or multi-node setups. The installer can install PostgreSQL locally for you, or accept a DSN to an existing server.
+
+At runtime the backend is selected via environment variables (the installer writes these to `/etc/default/x-ui` for you):
+
+```
+XUI_DB_TYPE=postgres
+XUI_DB_DSN=postgres://xui:password@127.0.0.1:5432/xui?sslmode=disable
+```
+
+### Migrating an existing SQLite install to PostgreSQL
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/PeterHgg/3x-ui/main/install.sh)
+x-ui migrate-db --dsn "postgres://xui:password@127.0.0.1:5432/xui?sslmode=disable"
+# then set XUI_DB_TYPE and XUI_DB_DSN in /etc/default/x-ui and restart:
+systemctl restart x-ui
 ```
 
-### 管理脚本
+The source SQLite file is left untouched; remove it manually once you have verified the new backend.
 
-安装后，使用以下命令管理面板：
+### Docker
+
+The default `docker compose up -d` keeps using SQLite. To run with the bundled PostgreSQL service, uncomment the two `XUI_DB_*` env lines in `docker-compose.yml` and start with the profile:
 
 ```bash
-x-ui              # 显示管理菜单
-x-ui start        # 启动面板
-x-ui stop         # 停止面板
-x-ui restart      # 重启面板
-x-ui status       # 查看状态
-x-ui enable       # 设置开机自启
-x-ui disable      # 取消开机自启
-x-ui log          # 查看日志
-x-ui update       # 更新面板
-x-ui install      # 安装面板
-x-ui uninstall    # 卸载面板
+docker compose --profile postgres up -d
 ```
 
-## 版本说明
+The image bundles Fail2ban (enabled by default) to enforce per-client **IP limits**. Fail2ban bans offenders with `iptables`, which requires the `NET_ADMIN` capability. `docker-compose.yml` already grants it via `cap_add`; if you start the container with `docker run` instead, add the capabilities yourself, otherwise bans are logged but never applied:
 
-当前版本：**v2.9.25-0verf1ow**
+```bash
+docker run -d --cap-add=NET_ADMIN --cap-add=NET_RAW ... ghcr.io/mhsanaei/3x-ui
+```
 
-- 基于 MHSanaei/3x-ui 项目
-- 由 **0verf1ow** 维护和增强
+## Environment Variables
 
-### 最新优化 (v2.9.25)
-- ✅ **流量核算**: 彻底修复流量统计归零的问题，统一 Xray Tag 命名规则为 `[AccountID]_[Email]`
-- ✅ **同步修复**: 移除同步逻辑中错误的 `Port_` 前缀，回归 `MasterID_` 统一核算体系，确保主从数据完美对齐
-- ✅ **API 加固**: 修正 API 删除、禁用、自动续费等场景下的 Tag 匹配逻辑，防止因 Tag 不匹配导致的 Xray 内存溢出或统计失效
+| Variable | Description | Default |
+| --- | --- | --- |
+| `XUI_DB_TYPE` | Database backend: `sqlite` or `postgres` | `sqlite` |
+| `XUI_DB_DSN` | PostgreSQL connection string (when `XUI_DB_TYPE=postgres`) | — |
+| `XUI_DB_FOLDER` | Directory for the SQLite database file | `/etc/x-ui` |
+| `XUI_DB_MAX_OPEN_CONNS` | Maximum open connections (PostgreSQL pool) | — |
+| `XUI_DB_MAX_IDLE_CONNS` | Maximum idle connections (PostgreSQL pool) | — |
+| `XUI_ENABLE_FAIL2BAN` | Enable Fail2ban-based IP-limit enforcement | `true` |
+| `XUI_LOG_LEVEL` | Log verbosity (`debug`, `info`, `warning`, `error`) | `info` |
+| `XUI_DEBUG` | Enable debug mode | `false` |
 
-### 最新优化 (v2.9.24)
-- ✅ **同步修复**: 彻底修复从节点流量归属异常，通过 Master ID 自动映射本地入站，解决从节点流量“漏算”到管理员名下的顽疾
-- ✅ **精准对齐**: 统一主从节点的 Xray Tag 标识符，确保跨节点漫游时的流量统计完全一致
+## Supported Languages
 
-### 最新优化 (v2.9.22)
-- ✅ **流量核算**: 实现精准流量归属统计 (Precision Accounting)，通过入站 ID 唯一标识用户，彻底解决多端口同邮箱导致的流量翻倍扣除问题
-- ✅ **机器人修复**: 修复 Telegram 机器人重置流量时未同步重置入站端口总计的漏洞，确保面板数据与用户数据实时一致
-- ✅ **逻辑修复**: 修正自动重置任务中的全局作用域 Bug，防止单个入站重置误伤全服务器统计
-- ✅ **同步加固**: 进一步强化主从同步过程中的邮箱识别正则，提升统计系统的鲁棒性
+The panel UI is available in 13 languages:
 
-### 最新优化 (v2.9.21)
-- ✅ **流量统计**: 加固从节点流量同步逻辑，增加严格的邮箱格式校验，防止因下划线邮箱误判导致的流量重复计算问题
-- ✅ **订阅增强**: Clash 订阅现为每个地区（负载均衡组）自动生成对应的自动测速（url-test）单节点组，并移除了全局的“低速单节点”
-- ✅ **体验优化**: 扩大 TOTP 两步验证的时间容错窗口至 ±120 秒，完美解决系统时间漂移导致的验证失败问题
-- ✅ **体验优化**: 全局提升 Ant Design 消息提示的层级 (z-index)，解决通知弹窗被登录框等其他组件遮挡的问题
-- ✅ **代码清理**: 移除已弃用的"低速专线"开关逻辑，默认启用新的"低速单节点"模式
-- ✅ **体验优化**: "低速专线"升级为"低速单节点"，包含所有节点并支持手动选择，移除旧版xcdn逻辑
-- ✅ **DNS增强**: 强制开启 `redir-host` 模式，解决平安好车主、银行等国内App因 fake-ip 导致误走代理的问题
-- ✅ **代码重构**: ExternalProxy处理代码减少120+行重复，错误处理覆盖率提升至95%
-- ✅ **同步增强**: SHA256哈希校验，可检测客户端配置的任何变化
-- ✅ **订阅优化**: 所有订阅类型支持文件名和日期，中文文件名显示修复
+English · فارسی · العربية · 中文（简体） · 中文（繁體） · Español · Русский · Українська · Türkçe · Tiếng Việt · 日本語 · Bahasa Indonesia · Português (Brasil)
 
-## 核心功能
+## Contributing
 
-### 主从节点同步系统 (Master-Slave Sync)
-- **多节点管理**：支持将入站 (Inbound) 设置为“从节点”，通过 `SyncSourceId` 关联主节点。
-- **全自动同步**：客户端实时同步至从节点，包含 `PeriodicSyncJob` 定时任务，通过 SHA256 哈希校验确保主从节点用户配置一致。
-- **统一流量管理**：支持跨节点流量统计，从节点可实时从主节点同步用户限额、到期时间和启用状态。
-- **精准流量核算**：通过 Master ID 自动映射本地入站，统一 Xray Tag 命名规则（`[AccountID]_[Email]`），彻底解决主从模式下流量“漏算”或重复计算的顽疾。
-- **实时触发更新**：主节点修改用户后，会立即触发向所有子节点推送更新。
-- **数据安全保障**：从节点强制只读模式，操作时提供实时同步状态提示。
+Contributions are welcome. Please read the [Contributing Guide](/CONTRIBUTING.md) before opening an issue or pull request.
 
-### 增强型订阅系统 (Subscription V2)
-> [!NOTE]
-> Clash 配置专用于 Cloudflare 优选架构，非通用订阅转换器。
+## A Special Thanks to
 
-- **Clash 深度支持**：自动生成 CDN 节点，强制 443 端口，支持入站备注智能分组。
-- **自动化配置**：自动同步 WS 路径，支持隐藏端口及自动设置订阅信息（名称/更新间隔/流量）。
-- **智能节点分组**：为每个地区（负载均衡组）自动生成对应的自动测速（url-test）单节点组。
-- **高级规则系统**：内置可视化规则编辑器，集成 Loyalsoldier/clash-rules 自动代理，默认开启 `redir-host` 模式。
-- **JSON 订阅优化**：支持所有订阅类型的文件名和日期显示，提供更灵活的客户端适配。
-- **独立设置页**：在面板设置中新增了专门的订阅管理通用配置页面。
+- [alireza0](https://github.com/alireza0/)
 
-### 诊断与日志优化
-- **深度诊断日志**：引入更详细的诊断日志记录 (Diagnostic Logs)，便于排查主从同步和流量统计问题。
-- **匹配逻辑优化**：优化主从模式下的流量匹配和归因逻辑，减少统计误差。
-- **API 加固**：修正 API 删除、禁用、自动续费等场景下的 Tag 匹配逻辑，防止因 Tag 不匹配导致的 Xray 内存溢出或统计失效。
+## Acknowledgment
 
-### 界面与体验增强
-- **全新登录页**：大幅重构登录界面逻辑与 UI。
-- **通知优化**：全局提升 Ant Design 消息提示的层级，解决通知弹窗被遮挡的问题。
-- **TOTP 容错**：扩大 TOTP 两步验证的时间容错窗口至 ±120 秒，完美解决系统时间漂移导致的验证失败问题。
+- [Iran v2ray rules](https://github.com/chocolate4u/Iran-v2ray-rules) (License: **GPL-3.0**): _Enhanced v2ray/xray and v2ray/xray-clients routing rules with built-in Iranian domains and a focus on security and adblocking._
+- [Russia v2ray rules](https://github.com/runetfreedom/russia-v2ray-rules-dat) (License: **GPL-3.0**): _This repository contains automatically updated V2Ray routing rules based on data on blocked domains and addresses in Russia._
 
-### 性能与安全改进
-- **客户端管理**：新增专门处理客户端逻辑的模块，优化数据库查询，解决 N+1 查询问题。
-- **IP 审计增强**：改进 IP 连接数限制检查逻辑，实现“last IP wins”策略。
-- **代码重构**：大幅减少重复代码（如 ExternalProxy 处理），提升错误处理覆盖率。
+## Community Tools
 
-## 完整文档
+Tools and integrations built by the community around 3x-ui.
 
-详细文档请访问 [项目 Wiki](https://github.com/PeterHgg/3x-ui/wiki)
+- [terraform-provider-3x-ui](https://github.com/batonogov/terraform-provider-threexui) (License: **MIT**): _Manage inbounds, clients, panel settings, and Xray configuration as code with Terraform / OpenTofu._
 
-## 特别感谢
+## Support project
 
-- [MHSanaei](https://github.com/MHSanaei/) - 原始 3x-ui 项目作者
-- [alireza0](https://github.com/alireza0/) - 原始 X-UI 项目贡献者
+**If this project is helpful to you, you may wish to give it a**:star2:
 
-## 致谢
+<a href="https://www.buymeacoffee.com/MHSanaei" target="_blank">
+<img src="./media/default-yellow.png" alt="Buy Me A Coffee" style="height: 70px !important;width: 277px !important;" >
+</a>
 
-- [Iran v2ray rules](https://github.com/chocolate4u/Iran-v2ray-rules) (协议: **GPL-3.0**): _增强的 v2ray/xray 路由规则，内置伊朗域名，专注于安全和广告拦截。_
-- [Russia v2ray rules](https://github.com/runetfreedom/russia-v2ray-rules-dat) (协议: **GPL-3.0**): _基于俄罗斯被封锁域名和地址数据的自动更新 V2Ray 路由规则。_
+</br>
+<a href="https://nowpayments.io/donation/hsanaei" target="_blank" rel="noreferrer noopener">
+   <img src="./media/donation-button-black.svg" alt="Crypto donation button by NOWPayments">
+</a>
 
-## 支持项目
+## Stargazers over Time
 
-**如果这个项目对你有帮助，请给它一个**:star2:
-
-## Star 历史
-
-[![Stargazers over time](https://starchart.cc/PeterHgg/3x-ui.svg?variant=adaptive)](https://starchart.cc/PeterHgg/3x-ui)
+[![Stargazers over time](https://starchart.cc/MHSanaei/3x-ui.svg?variant=adaptive)](https://starchart.cc/MHSanaei/3x-ui)

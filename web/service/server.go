@@ -7,25 +7,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/mhsanaei/3x-ui/v2/config"
-	"github.com/mhsanaei/3x-ui/v2/database"
-	"github.com/mhsanaei/3x-ui/v2/logger"
-	"github.com/mhsanaei/3x-ui/v2/util/common"
-	"github.com/mhsanaei/3x-ui/v2/util/sys"
-	"github.com/mhsanaei/3x-ui/v2/xray"
+	"github.com/mhsanaei/3x-ui/v3/config"
+	"github.com/mhsanaei/3x-ui/v3/database"
+	"github.com/mhsanaei/3x-ui/v3/logger"
+	"github.com/mhsanaei/3x-ui/v3/util/common"
+	"github.com/mhsanaei/3x-ui/v3/util/sys"
+	"github.com/mhsanaei/3x-ui/v3/xray"
 
 	"github.com/google/uuid"
 	"github.com/shirou/gopsutil/v4/cpu"
@@ -66,22 +67,36 @@ type Status struct {
 		Current uint64 `json:"current"`
 		Total   uint64 `json:"total"`
 	} `json:"disk"`
+	DiskIO struct {
+		Read  uint64 `json:"read"`
+		Write uint64 `json:"write"`
+	} `json:"diskIO"`
+	DiskTraffic struct {
+		Read  uint64 `json:"read"`
+		Write uint64 `json:"write"`
+	} `json:"diskTraffic"`
 	Xray struct {
 		State    ProcessState `json:"state"`
 		ErrorMsg string       `json:"errorMsg"`
 		Version  string       `json:"version"`
 	} `json:"xray"`
-	Uptime   uint64    `json:"uptime"`
-	Loads    []float64 `json:"loads"`
-	TcpCount int       `json:"tcpCount"`
-	UdpCount int       `json:"udpCount"`
-	NetIO    struct {
-		Up   uint64 `json:"up"`
-		Down uint64 `json:"down"`
+	PanelVersion string    `json:"panelVersion"`
+	PanelGuid    string    `json:"panelGuid"`
+	Uptime       uint64    `json:"uptime"`
+	Loads        []float64 `json:"loads"`
+	TcpCount     int       `json:"tcpCount"`
+	UdpCount     int       `json:"udpCount"`
+	NetIO        struct {
+		Up      uint64 `json:"up"`
+		Down    uint64 `json:"down"`
+		PktUp   uint64 `json:"pktUp"`
+		PktDown uint64 `json:"pktDown"`
 	} `json:"netIO"`
 	NetTraffic struct {
-		Sent uint64 `json:"sent"`
-		Recv uint64 `json:"recv"`
+		Sent    uint64 `json:"sent"`
+		Recv    uint64 `json:"recv"`
+		PktSent uint64 `json:"pktSent"`
+		PktRecv uint64 `json:"pktRecv"`
 	} `json:"netTraffic"`
 	PublicIP struct {
 		IPv4 string `json:"ipv4"`
@@ -104,6 +119,7 @@ type Release struct {
 type ServerService struct {
 	xrayService        XrayService
 	inboundService     InboundService
+	settingService     SettingService
 	cachedIPv4         string
 	cachedIPv6         string
 	noIPv6             bool
@@ -112,75 +128,149 @@ type ServerService struct {
 	hasLastCPUSample   bool
 	hasNativeCPUSample bool
 	emaCPU             float64
-	cpuHistory         []CPUSample
 	cachedCpuSpeedMhz  float64
 	lastCpuInfoAttempt time.Time
+
+	lastStatusMu sync.RWMutex
+	lastStatus   *Status
+
+	versionsCacheMu sync.Mutex
+	versionsCache   *cachedXrayVersions
 }
 
-// AggregateCpuHistory returns up to maxPoints averaged buckets of size bucketSeconds over recent data.
-func (s *ServerService) AggregateCpuHistory(bucketSeconds int, maxPoints int) []map[string]any {
-	if bucketSeconds <= 0 || maxPoints <= 0 {
+type cachedXrayVersions struct {
+	versions  []string
+	fetchedAt time.Time
+}
+
+// xrayVersionsCacheTTL bounds how often /getXrayVersion hits GitHub. The list
+// is purely informational (rendered in the "switch Xray version" picker) so a
+// quarter-hour staleness window is fine and saves the API budget.
+const xrayVersionsCacheTTL = 15 * time.Minute
+
+// allowedHistoryBuckets is the bucket-second whitelist for time-series
+// aggregation endpoints (server + node metrics). Restricting it prevents
+// callers from triggering arbitrary aggregation work and keeps the
+// frontend's bucket selector self-documenting.
+var allowedHistoryBuckets = map[int]bool{
+	2:   true, // Real-time view
+	30:  true, // 30s intervals
+	60:  true, // 1m intervals
+	120: true, // 2m intervals
+	180: true, // 3m intervals
+	300: true, // 5m intervals
+}
+
+// IsAllowedHistoryBucket reports whether a bucket-seconds value is in the
+// whitelist used by /server/history, /server/cpuHistory, /server/xrayMetricsHistory,
+// /server/xrayObservatoryHistory, and /nodes/history.
+func IsAllowedHistoryBucket(bucketSeconds int) bool {
+	return allowedHistoryBuckets[bucketSeconds]
+}
+
+// LastStatus returns the most recent Status snapshot collected by
+// RefreshStatus. Safe for concurrent readers.
+func (s *ServerService) LastStatus() *Status {
+	s.lastStatusMu.RLock()
+	defer s.lastStatusMu.RUnlock()
+	return s.lastStatus
+}
+
+// RefreshStatus collects a new system snapshot, stores it as LastStatus, and
+// appends it to the system-metrics time series. Returns the new snapshot (may
+// be nil if collection failed). Called by the background ticker; the caller is
+// responsible for any side effects (websocket broadcast, xray metrics sample).
+func (s *ServerService) RefreshStatus() *Status {
+	next := s.GetStatus(s.LastStatus())
+	if next == nil {
 		return nil
 	}
-	cutoff := time.Now().Add(-time.Duration(bucketSeconds*maxPoints) * time.Second).Unix()
-	s.mu.Lock()
-	// find start index (history sorted ascending)
-	hist := s.cpuHistory
-	// binary-ish scan (simple linear from end since size capped ~10800 is fine)
-	startIdx := 0
-	for i := len(hist) - 1; i >= 0; i-- {
-		if hist[i].T < cutoff {
-			startIdx = i + 1
-			break
+	s.lastStatusMu.Lock()
+	s.lastStatus = next
+	s.lastStatusMu.Unlock()
+	s.AppendStatusSample(time.Now(), next)
+	return next
+}
+
+// GetXrayVersionsCached wraps GetXrayVersions with a TTL cache. On fetch
+// failure we serve the last successful list (if any) so the UI doesn't go
+// blank during a GitHub API hiccup; if there's no cache at all the underlying
+// error is surfaced.
+func (s *ServerService) GetXrayVersionsCached() ([]string, error) {
+	s.versionsCacheMu.Lock()
+	cache := s.versionsCache
+	s.versionsCacheMu.Unlock()
+	if cache != nil && time.Since(cache.fetchedAt) <= xrayVersionsCacheTTL {
+		return cache.versions, nil
+	}
+	versions, err := s.GetXrayVersions()
+	if err != nil {
+		if cache != nil {
+			logger.Warning("GetXrayVersionsCached: serving stale list:", err)
+			return cache.versions, nil
+		}
+		return nil, err
+	}
+	s.versionsCacheMu.Lock()
+	s.versionsCache = &cachedXrayVersions{versions: versions, fetchedAt: time.Now()}
+	s.versionsCacheMu.Unlock()
+	return versions, nil
+}
+
+// GetDefaultLogOutboundTags scans the default Xray config for freedom and
+// blackhole outbound tags so /getXrayLogs can colour-code log lines without
+// the controller re-doing the JSON walk. Falls back to the historical
+// "direct"/"blocked" defaults when the config can't be read.
+func (s *ServerService) GetDefaultLogOutboundTags() (freedoms, blackholes []string) {
+	config, err := s.settingService.GetDefaultXrayConfig()
+	if err == nil && config != nil {
+		if cfgMap, ok := config.(map[string]any); ok {
+			if outbounds, ok := cfgMap["outbounds"].([]any); ok {
+				for _, outbound := range outbounds {
+					obMap, ok := outbound.(map[string]any)
+					if !ok {
+						continue
+					}
+					tag, _ := obMap["tag"].(string)
+					if tag == "" {
+						continue
+					}
+					switch obMap["protocol"] {
+					case "freedom":
+						freedoms = append(freedoms, tag)
+					case "blackhole":
+						blackholes = append(blackholes, tag)
+					}
+				}
+			}
 		}
 	}
-	if startIdx >= len(hist) {
-		s.mu.Unlock()
-		return []map[string]any{}
+	if len(freedoms) == 0 {
+		freedoms = []string{"direct"}
 	}
-	slice := hist[startIdx:]
-	// copy for unlock
-	tmp := make([]CPUSample, len(slice))
-	copy(tmp, slice)
-	s.mu.Unlock()
-	if len(tmp) == 0 {
-		return []map[string]any{}
+	if len(blackholes) == 0 {
+		blackholes = []string{"blocked"}
 	}
-	var out []map[string]any
-	var acc []float64
-	bSize := int64(bucketSeconds)
-	curBucket := (tmp[0].T / bSize) * bSize
-	flush := func(ts int64) {
-		if len(acc) == 0 {
-			return
-		}
-		sum := 0.0
-		for _, v := range acc {
-			sum += v
-		}
-		avg := sum / float64(len(acc))
-		out = append(out, map[string]any{"t": ts, "cpu": avg})
-		acc = acc[:0]
-	}
-	for _, p := range tmp {
-		b := (p.T / bSize) * bSize
-		if b != curBucket {
-			flush(curBucket)
-			curBucket = b
-		}
-		acc = append(acc, p.Cpu)
-	}
-	flush(curBucket)
-	if len(out) > maxPoints {
-		out = out[len(out)-maxPoints:]
+	return freedoms, blackholes
+}
+
+// AggregateCpuHistory returns up to maxPoints averaged buckets of size bucketSeconds.
+// Kept for back-compat with the original /panel/api/server/cpuHistory/:bucket route;
+// the response key is "cpu" (not "v") so legacy consumers parse unchanged.
+func (s *ServerService) AggregateCpuHistory(bucketSeconds int, maxPoints int) []map[string]any {
+	out := systemMetrics.aggregate("cpu", bucketSeconds, maxPoints)
+	for _, p := range out {
+		p["cpu"] = p["v"]
+		delete(p, "v")
 	}
 	return out
 }
 
-// CPUSample single CPU utilization sample
-type CPUSample struct {
-	T   int64   `json:"t"`   // unix seconds
-	Cpu float64 `json:"cpu"` // percent 0..100
+// AggregateSystemMetric returns up to maxPoints averaged buckets for any
+// known system metric (see SystemMetricKeys). Output points have keys
+// {"t": unixSec, "v": value}; the caller decides how to format the value.
+func (s *ServerService) AggregateSystemMetric(metric string, bucketSeconds int, maxPoints int) []map[string]any {
+	return systemMetrics.aggregate(metric, bucketSeconds, maxPoints)
 }
 
 type LogEntry struct {
@@ -306,6 +396,30 @@ func (s *ServerService) GetStatus(lastStatus *Status) *Status {
 		status.Disk.Total = diskInfo.Total
 	}
 
+	diskIOStats, err := disk.IOCounters()
+	if err != nil {
+		logger.Warning("get disk io counters failed:", err)
+	} else {
+		var totalRead, totalWrite uint64
+		for _, counter := range diskIOStats {
+			totalRead += counter.ReadBytes
+			totalWrite += counter.WriteBytes
+		}
+		status.DiskTraffic.Read = totalRead
+		status.DiskTraffic.Write = totalWrite
+
+		if lastStatus != nil {
+			duration := now.Sub(lastStatus.T)
+			seconds := float64(duration) / float64(time.Second)
+			if seconds > 0 && status.DiskTraffic.Read >= lastStatus.DiskTraffic.Read {
+				status.DiskIO.Read = uint64(float64(status.DiskTraffic.Read-lastStatus.DiskTraffic.Read) / seconds)
+			}
+			if seconds > 0 && status.DiskTraffic.Write >= lastStatus.DiskTraffic.Write {
+				status.DiskIO.Write = uint64(float64(status.DiskTraffic.Write-lastStatus.DiskTraffic.Write) / seconds)
+			}
+		}
+	}
+
 	// Load averages
 	avgState, err := load.Avg()
 	if err != nil {
@@ -315,13 +429,25 @@ func (s *ServerService) GetStatus(lastStatus *Status) *Status {
 	}
 
 	// Network stats
-	ioStats, err := net.IOCounters(false)
+	ioStats, err := net.IOCounters(true)
 	if err != nil {
 		logger.Warning("get io counters failed:", err)
-	} else if len(ioStats) > 0 {
-		ioStat := ioStats[0]
-		status.NetTraffic.Sent = ioStat.BytesSent
-		status.NetTraffic.Recv = ioStat.BytesRecv
+	} else {
+		var totalSent, totalRecv, totalPktSent, totalPktRecv uint64
+		for _, iface := range ioStats {
+			name := strings.ToLower(iface.Name)
+			if isVirtualInterface(name) {
+				continue
+			}
+			totalSent += iface.BytesSent
+			totalRecv += iface.BytesRecv
+			totalPktSent += iface.PacketsSent
+			totalPktRecv += iface.PacketsRecv
+		}
+		status.NetTraffic.Sent = totalSent
+		status.NetTraffic.Recv = totalRecv
+		status.NetTraffic.PktSent = totalPktSent
+		status.NetTraffic.PktRecv = totalPktRecv
 
 		if lastStatus != nil {
 			duration := now.Sub(lastStatus.T)
@@ -330,9 +456,13 @@ func (s *ServerService) GetStatus(lastStatus *Status) *Status {
 			down := uint64(float64(status.NetTraffic.Recv-lastStatus.NetTraffic.Recv) / seconds)
 			status.NetIO.Up = up
 			status.NetIO.Down = down
+			if seconds > 0 && status.NetTraffic.PktSent >= lastStatus.NetTraffic.PktSent {
+				status.NetIO.PktUp = uint64(float64(status.NetTraffic.PktSent-lastStatus.NetTraffic.PktSent) / seconds)
+			}
+			if seconds > 0 && status.NetTraffic.PktRecv >= lastStatus.NetTraffic.PktRecv {
+				status.NetIO.PktDown = uint64(float64(status.NetTraffic.PktRecv-lastStatus.NetTraffic.PktRecv) / seconds)
+			}
 		}
-	} else {
-		logger.Warning("can not find io counters")
 	}
 
 	// TCP/UDP connections
@@ -402,6 +532,10 @@ func (s *ServerService) GetStatus(lastStatus *Status) *Status {
 		status.Xray.ErrorMsg = s.xrayService.GetXrayResult()
 	}
 	status.Xray.Version = s.xrayService.GetXrayVersion()
+	status.PanelVersion = config.GetVersion()
+	if guid, err := s.settingService.GetPanelGuid(); err == nil {
+		status.PanelGuid = guid
+	}
 
 	// Application stats
 	var rtm runtime.MemStats
@@ -417,18 +551,49 @@ func (s *ServerService) GetStatus(lastStatus *Status) *Status {
 	return status
 }
 
+// AppendCpuSample is preserved for callers that only have the CPU number.
+// New callers should prefer AppendStatusSample which writes the full set.
 func (s *ServerService) AppendCpuSample(t time.Time, v float64) {
-	const capacity = 9000 // ~5 hours @ 2s interval
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	p := CPUSample{T: t.Unix(), Cpu: v}
-	if n := len(s.cpuHistory); n > 0 && s.cpuHistory[n-1].T == p.T {
-		s.cpuHistory[n-1] = p
-	} else {
-		s.cpuHistory = append(s.cpuHistory, p)
+	systemMetrics.append("cpu", t, v)
+}
+
+// AppendStatusSample writes one tick of every metric we keep — CPU, memory
+// percent, network throughput (bytes/s), online client count, and the three
+// load averages. Called by RefreshStatus on the same @2s cadence as
+// AppendCpuSample, so all series stay aligned.
+func (s *ServerService) AppendStatusSample(t time.Time, status *Status) {
+	if status == nil {
+		return
 	}
-	if len(s.cpuHistory) > capacity {
-		s.cpuHistory = s.cpuHistory[len(s.cpuHistory)-capacity:]
+	systemMetrics.append("cpu", t, status.Cpu)
+	if status.Mem.Total > 0 {
+		systemMetrics.append("mem", t, float64(status.Mem.Current)*100.0/float64(status.Mem.Total))
+	}
+	if status.Swap.Total > 0 {
+		systemMetrics.append("swap", t, float64(status.Swap.Current)*100.0/float64(status.Swap.Total))
+	} else {
+		systemMetrics.append("swap", t, 0)
+	}
+	systemMetrics.append("netUp", t, float64(status.NetIO.Up))
+	systemMetrics.append("netDown", t, float64(status.NetIO.Down))
+	systemMetrics.append("diskRead", t, float64(status.DiskIO.Read))
+	systemMetrics.append("diskWrite", t, float64(status.DiskIO.Write))
+	if status.Disk.Total > 0 {
+		systemMetrics.append("diskUsage", t, float64(status.Disk.Current)*100.0/float64(status.Disk.Total))
+	}
+	systemMetrics.append("pktUp", t, float64(status.NetIO.PktUp))
+	systemMetrics.append("pktDown", t, float64(status.NetIO.PktDown))
+	systemMetrics.append("tcpCount", t, float64(status.TcpCount))
+	systemMetrics.append("udpCount", t, float64(status.UdpCount))
+	online := 0
+	if p != nil && p.IsRunning() {
+		online = len(p.GetOnlineClients())
+	}
+	systemMetrics.append("online", t, float64(online))
+	if len(status.Loads) >= 3 {
+		systemMetrics.append("load1", t, status.Loads[0])
+		systemMetrics.append("load5", t, status.Loads[1])
+		systemMetrics.append("load15", t, status.Loads[2])
 	}
 }
 
@@ -517,13 +682,18 @@ func (s *ServerService) sampleCPUUtilization() (float64, error) {
 	return s.emaCPU, nil
 }
 
+const (
+	maxXrayArchiveBytes = 200 << 20
+	maxXrayBinaryBytes  = 200 << 20
+)
+
 func (s *ServerService) GetXrayVersions() ([]string, error) {
 	const (
 		XrayURL    = "https://api.github.com/repos/XTLS/Xray-core/releases"
 		bufferSize = 8192
 	)
 
-	resp, err := http.Get(XrayURL)
+	resp, err := s.settingService.NewProxiedHTTPClient(10 * time.Second).Get(XrayURL)
 	if err != nil {
 		return nil, err
 	}
@@ -567,7 +737,7 @@ func (s *ServerService) GetXrayVersions() ([]string, error) {
 			continue
 		}
 
-		if major > 26 || (major == 26 && minor > 1) || (major == 26 && minor == 1 && patch >= 31) {
+		if major > 26 || (major == 26 && minor > 4) || (major == 26 && minor == 4 && patch >= 25) {
 			versions = append(versions, release.TagName)
 		}
 	}
@@ -622,28 +792,53 @@ func (s *ServerService) downloadXRay(version string) (string, error) {
 
 	fileName := fmt.Sprintf("Xray-%s-%s.zip", osName, arch)
 	url := fmt.Sprintf("https://github.com/XTLS/Xray-core/releases/download/%s/%s", version, fileName)
-	resp, err := http.Get(url)
+	client := s.settingService.NewProxiedHTTPClient(60 * time.Second)
+	resp, err := client.Get(url)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("download xray: unexpected HTTP %d", resp.StatusCode)
+	}
+	if resp.ContentLength > maxXrayArchiveBytes {
+		return "", fmt.Errorf("download xray: archive exceeds %d bytes", maxXrayArchiveBytes)
+	}
 
-	os.Remove(fileName)
-	file, err := os.Create(fileName)
+	file, err := os.CreateTemp("", "xray-*.zip")
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
+	path := file.Name()
+	ok := false
+	defer func() {
+		_ = file.Close()
+		if !ok {
+			_ = os.Remove(path)
+		}
+	}()
 
-	_, err = io.Copy(file, resp.Body)
+	n, err := io.Copy(file, io.LimitReader(resp.Body, maxXrayArchiveBytes+1))
 	if err != nil {
 		return "", err
 	}
+	if n > maxXrayArchiveBytes {
+		return "", fmt.Errorf("download xray: archive exceeds %d bytes", maxXrayArchiveBytes)
+	}
 
-	return fileName, nil
+	ok = true
+	return path, nil
 }
 
 func (s *ServerService) UpdateXray(version string) error {
+	versions, err := s.GetXrayVersions()
+	if err != nil {
+		return err
+	}
+	if !slices.Contains(versions, version) {
+		return fmt.Errorf("xray version %q is not in the fetched release list", version)
+	}
+
 	// 1. Stop xray before doing anything
 	if err := s.StopXrayService(); err != nil {
 		logger.Warning("failed to stop xray before update:", err)
@@ -678,20 +873,47 @@ func (s *ServerService) UpdateXray(version string) error {
 			return err
 		}
 		defer zipFile.Close()
-		os.MkdirAll(filepath.Dir(fileName), 0755)
-		os.Remove(fileName)
-		file, err := os.OpenFile(fileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, fs.ModePerm)
+		if err := os.MkdirAll(filepath.Dir(fileName), 0755); err != nil {
+			return err
+		}
+		tmpFile, err := os.CreateTemp(filepath.Dir(fileName), ".xray-*")
 		if err != nil {
 			return err
 		}
-		defer file.Close()
-		_, err = io.Copy(file, zipFile)
-		return err
+		tmpPath := tmpFile.Name()
+		ok := false
+		defer func() {
+			_ = tmpFile.Close()
+			if !ok {
+				_ = os.Remove(tmpPath)
+			}
+		}()
+		n, err := io.Copy(tmpFile, io.LimitReader(zipFile, maxXrayBinaryBytes+1))
+		if err != nil {
+			return err
+		}
+		if n > maxXrayBinaryBytes {
+			return fmt.Errorf("xray binary exceeds %d bytes", maxXrayBinaryBytes)
+		}
+		if err := tmpFile.Chmod(0755); err != nil {
+			return err
+		}
+		if err := tmpFile.Close(); err != nil {
+			return err
+		}
+		if runtime.GOOS == "windows" {
+			_ = os.Remove(fileName)
+		}
+		if err := os.Rename(tmpPath, fileName); err != nil {
+			return err
+		}
+		ok = true
+		return nil
 	}
 
 	// 4. Extract correct binary
 	if runtime.GOOS == "windows" {
-		targetBinary := filepath.Join("bin", "xray-windows-amd64.exe")
+		targetBinary := filepath.Join(config.GetBinFolderPath(), "xray-windows-amd64.exe")
 		err = copyZipFile("xray.exe", targetBinary)
 	} else {
 		err = copyZipFile("xray", xray.GetBinaryPath())
@@ -846,11 +1068,43 @@ func (s *ServerService) GetXrayLogs(
 		entries = append(entries, entry)
 	}
 
+	if err := scanner.Err(); err != nil {
+		return nil
+	}
+
 	if len(entries) > countInt {
 		entries = entries[len(entries)-countInt:]
 	}
 
 	return entries
+}
+
+// isVirtualInterface returns true for loopback and virtual/tunnel interfaces
+// that should be excluded from network traffic statistics.
+func isVirtualInterface(name string) bool {
+	// Exact matches
+	if name == "lo" || name == "lo0" {
+		return true
+	}
+	// Prefix matches for virtual/tunnel interfaces
+	virtualPrefixes := []string{
+		"loopback",
+		"docker",
+		"br-",
+		"veth",
+		"virbr",
+		"tun",
+		"tap",
+		"wg",
+		"tailscale",
+		"zt",
+	}
+	for _, prefix := range virtualPrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func logEntryContains(line string, suffixes []string) bool {
@@ -882,6 +1136,9 @@ func (s *ServerService) GetConfigJson() (any, error) {
 }
 
 func (s *ServerService) GetDb() ([]byte, error) {
+	if database.IsPostgres() {
+		return s.exportPostgresDB()
+	}
 	// Update by manually trigger a checkpoint operation
 	err := database.Checkpoint()
 	if err != nil {
@@ -903,7 +1160,45 @@ func (s *ServerService) GetDb() ([]byte, error) {
 	return fileContents, nil
 }
 
+// GetMigration produces a cross-engine migration file plus its filename: on a
+// SQLite panel it returns a portable .dump (SQL text), and on a PostgreSQL panel
+// it returns a .db SQLite database built from the live data. Either output can
+// then seed a panel running on the other backend.
+func (s *ServerService) GetMigration() ([]byte, string, error) {
+	if database.IsPostgres() {
+		tmp, err := os.CreateTemp("", "x-ui-migration-*.db")
+		if err != nil {
+			return nil, "", err
+		}
+		tmpPath := tmp.Name()
+		tmp.Close()
+		defer os.Remove(tmpPath)
+
+		if err := database.ExportPostgresToSQLite(config.GetDBDSN(), tmpPath); err != nil {
+			return nil, "", err
+		}
+		data, err := os.ReadFile(tmpPath)
+		if err != nil {
+			return nil, "", err
+		}
+		return data, "x-ui.db", nil
+	}
+
+	// SQLite panel: checkpoint so the .db reflects the latest writes, then dump.
+	if err := database.Checkpoint(); err != nil {
+		return nil, "", err
+	}
+	data, err := database.DumpSQLiteToBytes(config.GetDBPath())
+	if err != nil {
+		return nil, "", err
+	}
+	return data, "x-ui.dump", nil
+}
+
 func (s *ServerService) ImportDB(file multipart.File) error {
+	if database.IsPostgres() {
+		return s.importPostgresDB(file)
+	}
 	// Check if the file is a SQLite database
 	isValidDb, err := database.IsSQLiteDB(file)
 	if err != nil {
@@ -965,12 +1260,18 @@ func (s *ServerService) ImportDB(file multipart.File) error {
 		return common.NewErrorf("Invalid or corrupt db file: %v", err)
 	}
 
-	// Stop Xray (ignore error but log)
+	xrayStopped := true
+	defer func() {
+		if xrayStopped {
+			if errR := s.RestartXrayService(); errR != nil {
+				logger.Warningf("Failed to restart Xray after DB import error: %v", errR)
+			}
+		}
+	}()
 	if errStop := s.StopXrayService(); errStop != nil {
 		logger.Warningf("Failed to stop Xray before DB import: %v", errStop)
 	}
 
-	// Close existing DB to release file locks (especially on Windows)
 	if errClose := database.CloseDB(); errClose != nil {
 		logger.Warningf("Failed to close existing DB before replacement: %v", errClose)
 	}
@@ -1018,11 +1319,142 @@ func (s *ServerService) ImportDB(file multipart.File) error {
 
 	s.inboundService.MigrateDB()
 
-	// Start Xray
+	xrayStopped = false
 	if err = s.RestartXrayService(); err != nil {
 		return common.NewErrorf("Imported DB but failed to start Xray: %v", err)
 	}
 
+	return nil
+}
+
+// pgConnEnv turns the configured PostgreSQL DSN into the PG* environment used by
+// pg_dump/pg_restore, keeping the password out of the process argument list.
+func pgConnEnv(dsn string) (env []string, dbname string, err error) {
+	u, err := url.Parse(strings.TrimSpace(dsn))
+	if err != nil {
+		return nil, "", err
+	}
+	if u.Scheme != "postgres" && u.Scheme != "postgresql" {
+		return nil, "", common.NewErrorf("unsupported DSN scheme %q", u.Scheme)
+	}
+	dbname = strings.TrimPrefix(u.Path, "/")
+	if dbname == "" {
+		return nil, "", common.NewError("PostgreSQL DSN is missing a database name")
+	}
+	host := u.Hostname()
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	port := u.Port()
+	if port == "" {
+		port = "5432"
+	}
+	env = append(os.Environ(), "PGHOST="+host, "PGPORT="+port, "PGDATABASE="+dbname)
+	if user := u.User.Username(); user != "" {
+		env = append(env, "PGUSER="+user)
+	}
+	if pass, ok := u.User.Password(); ok {
+		env = append(env, "PGPASSWORD="+pass)
+	}
+	if sslmode := u.Query().Get("sslmode"); sslmode != "" {
+		env = append(env, "PGSSLMODE="+sslmode)
+	}
+	return env, dbname, nil
+}
+
+func (s *ServerService) exportPostgresDB() ([]byte, error) {
+	bin, err := exec.LookPath("pg_dump")
+	if err != nil {
+		return nil, common.NewError("pg_dump not found on the server; install the postgresql-client package to back up a PostgreSQL database")
+	}
+	env, dbname, err := pgConnEnv(config.GetDBDSN())
+	if err != nil {
+		return nil, common.NewErrorf("invalid PostgreSQL DSN: %v", err)
+	}
+	cmd := exec.Command(bin, "--format=custom", "--no-owner", "--no-privileges", "--dbname", dbname)
+	cmd.Env = env
+	var out, stderr bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, common.NewErrorf("pg_dump failed: %v: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return out.Bytes(), nil
+}
+
+func (s *ServerService) importPostgresDB(file multipart.File) error {
+	header := make([]byte, 5)
+	if _, err := file.ReadAt(header, 0); err != nil {
+		return common.NewErrorf("Error reading dump file: %v", err)
+	}
+	if string(header) != "PGDMP" {
+		return common.NewError("Invalid file: expected a PostgreSQL custom-format dump (.dump) created by this panel's Back Up")
+	}
+	if _, err := file.Seek(0, 0); err != nil {
+		return common.NewErrorf("Error resetting file reader: %v", err)
+	}
+
+	bin, err := exec.LookPath("pg_restore")
+	if err != nil {
+		return common.NewError("pg_restore not found on the server; install the postgresql-client package to restore a PostgreSQL database")
+	}
+	env, dbname, err := pgConnEnv(config.GetDBDSN())
+	if err != nil {
+		return common.NewErrorf("invalid PostgreSQL DSN: %v", err)
+	}
+
+	tempFile, err := os.CreateTemp("", "x-ui-pg-restore-*.dump")
+	if err != nil {
+		return common.NewErrorf("Error creating temporary dump file: %v", err)
+	}
+	tempPath := tempFile.Name()
+	defer os.Remove(tempPath)
+	if _, err := io.Copy(tempFile, file); err != nil {
+		tempFile.Close()
+		return common.NewErrorf("Error saving dump: %v", err)
+	}
+	if err := tempFile.Close(); err != nil {
+		return common.NewErrorf("Error closing temporary dump file: %v", err)
+	}
+
+	xrayStopped := true
+	defer func() {
+		if xrayStopped {
+			if errR := s.RestartXrayService(); errR != nil {
+				logger.Warningf("Failed to restart Xray after DB restore error: %v", errR)
+			}
+		}
+	}()
+	if errStop := s.StopXrayService(); errStop != nil {
+		logger.Warningf("Failed to stop Xray before DB restore: %v", errStop)
+	}
+
+	if errClose := database.CloseDB(); errClose != nil {
+		logger.Warningf("Failed to close existing DB before restore: %v", errClose)
+	}
+
+	cmd := exec.Command(bin,
+		"--clean", "--if-exists", "--no-owner", "--no-privileges",
+		"--single-transaction", "--dbname", dbname, tempPath,
+	)
+	cmd.Env = env
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	runErr := cmd.Run()
+
+	if errInit := database.InitDB(config.GetDBPath()); errInit != nil {
+		return common.NewErrorf("Restore finished but reopening the database failed: %v", errInit)
+	}
+	s.inboundService.MigrateDB()
+
+	if runErr != nil {
+		return common.NewErrorf("pg_restore failed (database left unchanged): %v: %s", runErr, strings.TrimSpace(stderr.String()))
+	}
+
+	xrayStopped = false
+	if err := s.RestartXrayService(); err != nil {
+		return common.NewErrorf("Restored DB but failed to start Xray: %v", err)
+	}
 	return nil
 }
 
@@ -1056,37 +1488,27 @@ func (s *ServerService) IsValidGeofileName(filename string) bool {
 }
 
 func (s *ServerService) UpdateGeofile(fileName string) error {
-	files := []struct {
+	type geofileEntry struct {
 		URL      string
 		FileName string
-	}{
-		{"https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat", "geoip.dat"},
-		{"https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat", "geosite.dat"},
-		{"https://github.com/chocolate4u/Iran-v2ray-rules/releases/latest/download/geoip.dat", "geoip_IR.dat"},
-		{"https://github.com/chocolate4u/Iran-v2ray-rules/releases/latest/download/geosite.dat", "geosite_IR.dat"},
-		{"https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geoip.dat", "geoip_RU.dat"},
-		{"https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geosite.dat", "geosite_RU.dat"},
+	}
+	geofileAllowlist := map[string]geofileEntry{
+		"geoip.dat":      {"https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat", "geoip.dat"},
+		"geosite.dat":    {"https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat", "geosite.dat"},
+		"geoip_IR.dat":   {"https://github.com/chocolate4u/Iran-v2ray-rules/releases/latest/download/geoip.dat", "geoip_IR.dat"},
+		"geosite_IR.dat": {"https://github.com/chocolate4u/Iran-v2ray-rules/releases/latest/download/geosite.dat", "geosite_IR.dat"},
+		"geoip_RU.dat":   {"https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geoip.dat", "geoip_RU.dat"},
+		"geosite_RU.dat": {"https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geosite.dat", "geosite_RU.dat"},
 	}
 
 	// Strict allowlist check to avoid writing uncontrolled files
 	if fileName != "" {
-		// Use the centralized validation function
-		if !s.IsValidGeofileName(fileName) {
-			return common.NewErrorf("Invalid geofile name: contains unsafe path characters: %s", fileName)
-		}
-
-		// Ensure the filename matches exactly one from our allowlist
-		isAllowed := false
-		for _, file := range files {
-			if fileName == file.FileName {
-				isAllowed = true
-				break
-			}
-		}
-		if !isAllowed {
-			return common.NewErrorf("Invalid geofile name: %s not in allowlist", fileName)
+		if _, ok := geofileAllowlist[fileName]; !ok {
+			return common.NewErrorf("Invalid geofile name: %q not in allowlist", fileName)
 		}
 	}
+
+	client := s.settingService.NewProxiedHTTPClient(0)
 
 	downloadFile := func(url, destPath string) error {
 		var req *http.Request
@@ -1103,7 +1525,6 @@ func (s *ServerService) UpdateGeofile(fileName string) error {
 			}
 		}
 
-		client := &http.Client{}
 		resp, err := client.Do(req)
 		if err != nil {
 			return common.NewErrorf("Failed to download Geofile from %s: %v", url, err)
@@ -1159,32 +1580,18 @@ func (s *ServerService) UpdateGeofile(fileName string) error {
 	var errorMessages []string
 
 	if fileName == "" {
-		for _, file := range files {
-			// Sanitize the filename from our allowlist as an extra precaution
-			destPath := filepath.Join(config.GetBinFolderPath(), filepath.Base(file.FileName))
-			if err := downloadFile(file.URL, destPath); err != nil {
-				errorMessages = append(errorMessages, fmt.Sprintf("Error downloading Geofile '%s': %v", file.FileName, err))
+		// Download all geofiles
+		for _, entry := range geofileAllowlist {
+			destPath := filepath.Join(config.GetBinFolderPath(), entry.FileName)
+			if err := downloadFile(entry.URL, destPath); err != nil {
+				errorMessages = append(errorMessages, fmt.Sprintf("Error downloading Geofile '%s': %v", entry.FileName, err))
 			}
 		}
 	} else {
-		// Use filepath.Base to ensure we only get the filename component, no path traversal
-		safeName := filepath.Base(fileName)
-		destPath := filepath.Join(config.GetBinFolderPath(), safeName)
-
-		var fileURL string
-		for _, file := range files {
-			if file.FileName == fileName {
-				fileURL = file.URL
-				break
-			}
-		}
-
-		if fileURL == "" {
-			errorMessages = append(errorMessages, fmt.Sprintf("File '%s' not found in the list of Geofiles", fileName))
-		} else {
-			if err := downloadFile(fileURL, destPath); err != nil {
-				errorMessages = append(errorMessages, fmt.Sprintf("Error downloading Geofile '%s': %v", fileName, err))
-			}
+		entry := geofileAllowlist[fileName]
+		destPath := filepath.Join(config.GetBinFolderPath(), entry.FileName)
+		if err := downloadFile(entry.URL, destPath); err != nil {
+			errorMessages = append(errorMessages, fmt.Sprintf("Error downloading Geofile '%s': %v", entry.FileName, err))
 		}
 	}
 
@@ -1284,7 +1691,13 @@ func (s *ServerService) GetNewVlessEnc() (any, error) {
 		return nil, err
 	}
 
-	lines := strings.Split(out.String(), "\n")
+	return map[string]any{
+		"auths": parseVlessEncAuths(out.String()),
+	}, nil
+}
+
+func parseVlessEncAuths(output string) []map[string]string {
+	lines := strings.Split(output, "\n")
 	var auths []map[string]string
 	var current map[string]string
 
@@ -1294,14 +1707,18 @@ func (s *ServerService) GetNewVlessEnc() (any, error) {
 			if current != nil {
 				auths = append(auths, current)
 			}
+			label := strings.TrimSpace(strings.TrimPrefix(line, "Authentication:"))
 			current = map[string]string{
-				"label": strings.TrimSpace(strings.TrimPrefix(line, "Authentication:")),
+				"id":    vlessEncAuthID(label),
+				"label": label,
 			}
 		} else if strings.HasPrefix(line, `"decryption"`) || strings.HasPrefix(line, `"encryption"`) {
 			parts := strings.SplitN(line, ":", 2)
 			if len(parts) == 2 && current != nil {
 				key := strings.Trim(parts[0], `" `)
-				val := strings.Trim(parts[1], `" `)
+				val := strings.TrimSpace(parts[1])
+				val = strings.TrimSuffix(val, ",")
+				val = strings.Trim(val, `" `)
 				current[key] = val
 			}
 		}
@@ -1311,9 +1728,19 @@ func (s *ServerService) GetNewVlessEnc() (any, error) {
 		auths = append(auths, current)
 	}
 
-	return map[string]any{
-		"auths": auths,
-	}, nil
+	return auths
+}
+
+func vlessEncAuthID(label string) string {
+	normalized := strings.NewReplacer("-", "", "_", "", " ", "").Replace(strings.ToLower(label))
+	switch {
+	case strings.Contains(normalized, "mlkem768"):
+		return "mlkem768"
+	case strings.Contains(normalized, "x25519"):
+		return "x25519"
+	default:
+		return normalized
+	}
 }
 
 func (s *ServerService) GetNewUUID() (map[string]string, error) {

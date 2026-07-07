@@ -1,18 +1,44 @@
 package sub
 
 import (
+	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"html/template"
+	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/mhsanaei/3x-ui/v2/config"
-	"github.com/mhsanaei/3x-ui/v2/web/service"
-
 	"github.com/gin-gonic/gin"
+	"github.com/mhsanaei/3x-ui/v3/logger"
+	"github.com/mhsanaei/3x-ui/v3/web/service"
 )
+
+// writeSubError translates a service-layer result into an HTTP response.
+// A nil error with no rows means the subId doesn't match anything (deleted
+// client, never-existed id) and becomes 404. A real error becomes 500. No
+// body — VPN clients only look at the status.
+func writeSubError(c *gin.Context, err error) {
+	if err == nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	c.Status(http.StatusInternalServerError)
+}
+
+// cachedSubTemplate holds a parsed custom subscription template together with
+// the modification time of the file it was parsed from, so the cache can be
+// invalidated when an admin edits the template on disk.
+type cachedSubTemplate struct {
+	tmpl    *template.Template
+	modTime time.Time
+}
 
 // SUBController handles HTTP requests for subscription links and JSON configurations.
 type SUBController struct {
@@ -24,14 +50,19 @@ type SUBController struct {
 	subRoutingRules  string
 	subPath          string
 	subJsonPath      string
+	subClashPath     string
 	jsonEnabled      bool
+	clashEnabled     bool
 	subEncrypt       bool
 	updateInterval   string
 
-	subService     *SubService
-	subJsonService *SubJsonService
-	clashService   *ClashService
-	clientService  *service.ClientService
+	subService      *SubService
+	subJsonService  *SubJsonService
+	subClashService *SubClashService
+	settingService  service.SettingService
+
+	subTemplateMu    sync.RWMutex
+	subTemplateCache map[string]*cachedSubTemplate
 }
 
 // NewSUBController creates a new subscription controller with the given configuration.
@@ -39,15 +70,18 @@ func NewSUBController(
 	g *gin.RouterGroup,
 	subPath string,
 	jsonPath string,
+	clashPath string,
 	jsonEnabled bool,
+	clashEnabled bool,
 	encrypt bool,
 	showInfo bool,
 	rModel string,
 	update string,
-	jsonFragment string,
-	jsonNoise string,
 	jsonMux string,
 	jsonRules string,
+	jsonFinalMask string,
+	clashEnableRouting bool,
+	clashRules string,
 	subTitle string,
 	subSupportUrl string,
 	subProfileUrl string,
@@ -65,14 +99,17 @@ func NewSUBController(
 		subRoutingRules:  subRoutingRules,
 		subPath:          subPath,
 		subJsonPath:      jsonPath,
+		subClashPath:     clashPath,
 		jsonEnabled:      jsonEnabled,
+		clashEnabled:     clashEnabled,
 		subEncrypt:       encrypt,
 		updateInterval:   update,
 
-		subService:     sub,
-		subJsonService: NewSubJsonService(jsonFragment, jsonNoise, jsonMux, jsonRules, sub),
-		clashService:   NewClashService(),
-		clientService:  &service.ClientService{},
+		subService:      sub,
+		subJsonService:  NewSubJsonService(jsonMux, jsonRules, jsonFinalMask, sub),
+		subClashService: NewSubClashService(clashEnableRouting, clashRules, sub),
+
+		subTemplateCache: map[string]*cachedSubTemplate{},
 	}
 	a.initRouter(g)
 	return a
@@ -83,13 +120,16 @@ func NewSUBController(
 func (a *SUBController) initRouter(g *gin.RouterGroup) {
 	gLink := g.Group(a.subPath)
 	gLink.GET(":subid", a.subs)
-	// Clash 订阅路由（也使用 subPath）
-	gLink.GET("generate", a.generateClash)
-	gLink.GET("rules/:type", a.getClashRules)
-
+	gLink.HEAD(":subid", a.subs)
 	if a.jsonEnabled {
 		gJson := g.Group(a.subJsonPath)
 		gJson.GET(":subid", a.subJsons)
+		gJson.HEAD(":subid", a.subJsons)
+	}
+	if a.clashEnabled {
+		gClash := g.Group(a.subClashPath)
+		gClash.GET(":subid", a.subClashs)
+		gClash.HEAD(":subid", a.subClashs)
 	}
 }
 
@@ -97,9 +137,9 @@ func (a *SUBController) initRouter(g *gin.RouterGroup) {
 func (a *SUBController) subs(c *gin.Context) {
 	subId := c.Param("subid")
 	scheme, host, hostWithPort, hostHeader := a.subService.ResolveRequest(c)
-	subs, lastOnline, traffic, err := a.subService.GetSubs(subId, host)
+	subs, emails, lastOnline, traffic, err := a.subService.GetSubs(subId, host)
 	if err != nil || len(subs) == 0 {
-		c.String(400, "Error!")
+		writeSubError(c, err)
 	} else {
 		result := ""
 		for _, sub := range subs {
@@ -109,55 +149,30 @@ func (a *SUBController) subs(c *gin.Context) {
 		// If the request expects HTML (e.g., browser) or explicitly asked (?html=1 or ?view=html), render the info page here
 		accept := c.GetHeader("Accept")
 		if strings.Contains(strings.ToLower(accept), "text/html") || c.Query("html") == "1" || strings.EqualFold(c.Query("view"), "html") {
-			// Build page data in service
-			subURL, subJsonURL := a.subService.BuildURLs(scheme, hostWithPort, a.subPath, a.subJsonPath, subId)
+			subURL, subJsonURL, subClashURL := a.subService.BuildURLs(a.subPath, a.subJsonPath, a.subClashPath, subId)
 			if !a.jsonEnabled {
 				subJsonURL = ""
 			}
-			// Get base_path from context (set by middleware)
+			if !a.clashEnabled {
+				subClashURL = ""
+			}
 			basePath, exists := c.Get("base_path")
 			if !exists {
 				basePath = "/"
 			}
-			// Add subId to base_path for asset URLs
 			basePathStr := basePath.(string)
-			if basePathStr == "/" {
-				basePathStr = "/" + subId + "/"
-			} else {
-				// Remove trailing slash if exists, add subId, then add trailing slash
-				basePathStr = strings.TrimRight(basePathStr, "/") + "/" + subId + "/"
-			}
-			page := a.subService.BuildPageData(subId, hostHeader, traffic, lastOnline, subs, subURL, subJsonURL, basePathStr)
-			c.HTML(200, "subpage.html", gin.H{
-				"title":        "subscription.title",
-				"cur_ver":      config.GetVersion(),
-				"host":         page.Host,
-				"base_path":    page.BasePath,
-				"sId":          page.SId,
-				"download":     page.Download,
-				"upload":       page.Upload,
-				"total":        page.Total,
-				"used":         page.Used,
-				"remained":     page.Remained,
-				"expire":       page.Expire,
-				"lastOnline":   page.LastOnline,
-				"datepicker":   page.Datepicker,
-				"downloadByte": page.DownloadByte,
-				"uploadByte":   page.UploadByte,
-				"totalByte":    page.TotalByte,
-				"subUrl":       page.SubUrl,
-				"subJsonUrl":   page.SubJsonUrl,
-				"result":       page.Result,
-			})
+			page := a.subService.BuildPageData(subId, hostHeader, traffic, lastOnline, subs, emails, subURL, subJsonURL, subClashURL, basePathStr, a.subTitle, a.subSupportUrl)
+			a.serveSubPage(c, basePathStr, page)
 			return
 		}
 
 		// Add headers
 		header := fmt.Sprintf("upload=%d; download=%d; total=%d; expire=%d", traffic.Up, traffic.Down, traffic.Total, traffic.ExpiryTime/1000)
-		a.ApplyCommonHeaders(c, header, a.updateInterval, a.subTitle, a.subSupportUrl, a.subProfileUrl, a.subAnnounce, a.subEnableRouting, a.subRoutingRules)
-
-		// Set subscription filename with date
-		a.ApplySubscriptionFilename(c, subId, "txt")
+		profileUrl := a.subProfileUrl
+		if profileUrl == "" {
+			profileUrl = fmt.Sprintf("%s://%s%s", scheme, hostWithPort, c.Request.RequestURI)
+		}
+		a.ApplyCommonHeaders(c, header, a.updateInterval, a.subTitle, a.subSupportUrl, profileUrl, a.subAnnounce, a.subEnableRouting, a.subRoutingRules)
 
 		if a.subEncrypt {
 			c.String(200, base64.StdEncoding.EncodeToString([]byte(result)))
@@ -167,21 +182,198 @@ func (a *SUBController) subs(c *gin.Context) {
 	}
 }
 
+// serveSubPage renders web/dist/subpage.html for the current subscription
+// request. The Vite-built SPA reads window.__SUB_PAGE_DATA__ on mount —
+// we inject that here, along with window.X_UI_BASE_PATH so the
+// page's static asset references resolve correctly when the panel runs
+// behind a URL prefix.
+func (a *SUBController) serveSubPage(c *gin.Context, basePath string, page PageData) {
+	var body []byte
+	if diskBody, diskErr := os.ReadFile("web/dist/subpage.html"); diskErr == nil {
+		body = diskBody
+	} else {
+		readBody, err := distFS.ReadFile("dist/subpage.html")
+		if err != nil {
+			c.String(http.StatusInternalServerError, "missing embedded subpage")
+			return
+		}
+		body = readBody
+	}
+
+	// Vite emits absolute asset URLs (`/assets/...`); when the panel is
+	// installed under a custom URL prefix, rewrite them so the bundle
+	// loads from `<basePath>assets/...` where the static handler is
+	// actually mounted.
+	if basePath != "/" && basePath != "" {
+		body = bytes.ReplaceAll(body, []byte(`src="/assets/`), []byte(`src="`+basePath+`assets/`))
+		body = bytes.ReplaceAll(body, []byte(`href="/assets/`), []byte(`href="`+basePath+`assets/`))
+	}
+
+	// JSON-marshal the view-model so the SPA can read it as a plain
+	// The panel's "Calendar Type" setting decides whether the SubPage
+	// renders dates in Gregorian or Jalali — surface it here so the SPA
+	// can match the rest of the panel without a round-trip.
+	datepicker, _ := a.settingService.GetDatepicker()
+	if datepicker == "" {
+		datepicker = "gregorian"
+	}
+
+	subData := map[string]any{
+		"sId":           page.SId,
+		"enabled":       page.Enabled,
+		"download":      page.Download,
+		"upload":        page.Upload,
+		"total":         page.Total,
+		"used":          page.Used,
+		"remained":      page.Remained,
+		"expire":        page.Expire,
+		"lastOnline":    page.LastOnline,
+		"downloadByte":  page.DownloadByte,
+		"uploadByte":    page.UploadByte,
+		"totalByte":     page.TotalByte,
+		"subUrl":        page.SubUrl,
+		"subJsonUrl":    page.SubJsonUrl,
+		"subClashUrl":   page.SubClashUrl,
+		"subTitle":      page.SubTitle,
+		"subSupportUrl": page.SubSupportUrl,
+		"links":         page.Result,
+		"emails":        page.Emails,
+		"datepicker":    datepicker,
+	}
+
+	// When an admin has configured a custom subscription theme, render it
+	// instead of the default SPA. We render into a buffer first so a template
+	// that fails mid-execution can't leave a partially-written (corrupt)
+	// response — on any error we log and fall through to the default page.
+	if themeDir, _ := a.settingService.GetSubThemeDir(); themeDir != "" {
+		if tmpl, err := a.loadSubTemplate(themeDir); err != nil {
+			logger.Error("sub: custom template parse failed, using default page:", err)
+		} else if tmpl == nil {
+			logger.Warning("sub: subThemeDir set but no usable template found, using default page:", themeDir)
+		} else {
+			var buf bytes.Buffer
+			if execErr := tmpl.Execute(&buf, subData); execErr != nil {
+				logger.Error("sub: custom template execution failed, using default page:", execErr)
+			} else {
+				setNoCacheHeaders(c)
+				c.Data(http.StatusOK, "text/html; charset=utf-8", buf.Bytes())
+				return
+			}
+		}
+	}
+
+	subDataJSON, err := json.Marshal(subData)
+	if err != nil {
+		subDataJSON = []byte("{}")
+	}
+
+	// Defense-in-depth string-escape for the basePath embed — admin-
+	// controlled but cheap to harden.
+	jsEscape := strings.NewReplacer(
+		`\`, `\\`,
+		`"`, `\"`,
+		"\n", `\n`,
+		"\r", `\r`,
+		"<", `<`,
+		">", `>`,
+		"&", `&`,
+	)
+	escapedBase := jsEscape.Replace(basePath)
+
+	inject := []byte(`<script>window.X_UI_BASE_PATH="` + escapedBase + `";` +
+		`window.__SUB_PAGE_DATA__=` + string(subDataJSON) + `;</script></head>`)
+	out := bytes.Replace(body, []byte("</head>"), inject, 1)
+
+	setNoCacheHeaders(c)
+	c.Data(http.StatusOK, "text/html; charset=utf-8", out)
+}
+
+// setNoCacheHeaders marks a subscription page response as non-cacheable so VPN
+// clients and browsers always fetch fresh traffic/expiry data.
+func setNoCacheHeaders(c *gin.Context) {
+	c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
+}
+
+// loadSubTemplate returns the parsed custom subscription template located in
+// themeDir, preferring sub.html over index.html. Parsed templates are cached and
+// only re-parsed when the underlying file's modification time changes, so admin
+// edits are picked up without paying a disk read + HTML parse on every request.
+//
+// It returns (nil, nil) when themeDir is not a usable directory or contains no
+// template file — the caller should fall back to the default page. A non-nil
+// error means a template file exists but failed to parse.
+func (a *SUBController) loadSubTemplate(themeDir string) (*template.Template, error) {
+	info, err := os.Stat(themeDir)
+	if err != nil || !info.IsDir() {
+		return nil, nil
+	}
+
+	templatePath := filepath.Join(themeDir, "index.html")
+	if _, err := os.Stat(filepath.Join(themeDir, "sub.html")); err == nil {
+		templatePath = filepath.Join(themeDir, "sub.html")
+	}
+
+	fi, err := os.Stat(templatePath)
+	if err != nil {
+		return nil, nil
+	}
+	modTime := fi.ModTime()
+
+	a.subTemplateMu.RLock()
+	cached := a.subTemplateCache[templatePath]
+	a.subTemplateMu.RUnlock()
+	if cached != nil && cached.modTime.Equal(modTime) {
+		return cached.tmpl, nil
+	}
+
+	tmpl, err := template.ParseFiles(templatePath)
+	if err != nil {
+		return nil, err
+	}
+
+	a.subTemplateMu.Lock()
+	a.subTemplateCache[templatePath] = &cachedSubTemplate{tmpl: tmpl, modTime: modTime}
+	a.subTemplateMu.Unlock()
+	return tmpl, nil
+}
+
 // subJsons handles HTTP requests for JSON subscription configurations.
 func (a *SUBController) subJsons(c *gin.Context) {
 	subId := c.Param("subid")
-	_, host, _, _ := a.subService.ResolveRequest(c)
+	scheme, host, hostWithPort, _ := a.subService.ResolveRequest(c)
 	jsonSub, header, err := a.subJsonService.GetJson(subId, host)
 	if err != nil || len(jsonSub) == 0 {
-		c.String(400, "Error!")
+		writeSubError(c, err)
 	} else {
-		// Add headers
-		a.ApplyCommonHeaders(c, header, a.updateInterval, a.subTitle, a.subSupportUrl, a.subProfileUrl, a.subAnnounce, a.subEnableRouting, a.subRoutingRules)
-
-		// Set JSON subscription filename with date
-		a.ApplySubscriptionFilename(c, subId, "json")
+		profileUrl := a.subProfileUrl
+		if profileUrl == "" {
+			profileUrl = fmt.Sprintf("%s://%s%s", scheme, hostWithPort, c.Request.RequestURI)
+		}
+		a.ApplyCommonHeaders(c, header, a.updateInterval, a.subTitle, a.subSupportUrl, profileUrl, a.subAnnounce, a.subEnableRouting, a.subRoutingRules)
 
 		c.String(200, jsonSub)
+	}
+}
+
+func (a *SUBController) subClashs(c *gin.Context) {
+	subId := c.Param("subid")
+	scheme, host, hostWithPort, _ := a.subService.ResolveRequest(c)
+	clashSub, header, err := a.subClashService.GetClash(subId, host)
+	if err != nil || len(clashSub) == 0 {
+		writeSubError(c, err)
+	} else {
+		profileUrl := a.subProfileUrl
+		if profileUrl == "" {
+			profileUrl = fmt.Sprintf("%s://%s%s", scheme, hostWithPort, c.Request.RequestURI)
+		}
+		a.ApplyCommonHeaders(c, header, a.updateInterval, a.subTitle, a.subSupportUrl, profileUrl, a.subAnnounce, a.subEnableRouting, a.subRoutingRules)
+		if a.subTitle != "" {
+			// Clash clients commonly use Content-Disposition to choose the imported profile name.
+			c.Writer.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename*=UTF-8''%s`, url.PathEscape(a.subTitle)))
+		}
+		c.Data(200, "application/yaml; charset=utf-8", []byte(clashSub))
 	}
 }
 
@@ -199,200 +391,24 @@ func (a *SUBController) ApplyCommonHeaders(
 ) {
 	c.Writer.Header().Set("Subscription-Userinfo", header)
 	c.Writer.Header().Set("Profile-Update-Interval", updateInterval)
-	c.Writer.Header().Set("Profile-Title", "base64:"+base64.StdEncoding.EncodeToString([]byte(profileTitle)))
-	c.Writer.Header().Set("Support-Url", profileSupportUrl)
-	c.Writer.Header().Set("Profile-Web-Page-Url", profileUrl)
-	c.Writer.Header().Set("Announce", "base64:"+base64.StdEncoding.EncodeToString([]byte(profileAnnounce)))
+
+	//Basics
+	if profileTitle != "" {
+		c.Writer.Header().Set("Profile-Title", "base64:"+base64.StdEncoding.EncodeToString([]byte(profileTitle)))
+	}
+	if profileSupportUrl != "" {
+		c.Writer.Header().Set("Support-Url", profileSupportUrl)
+	}
+	if profileUrl != "" {
+		c.Writer.Header().Set("Profile-Web-Page-Url", profileUrl)
+	}
+	if profileAnnounce != "" {
+		c.Writer.Header().Set("Announce", "base64:"+base64.StdEncoding.EncodeToString([]byte(profileAnnounce)))
+	}
+
+	//Advanced (Happ)
 	c.Writer.Header().Set("Routing-Enable", strconv.FormatBool(profileEnableRouting))
-	c.Writer.Header().Set("Routing", profileRoutingRules)
-}
-
-// ApplySubscriptionFilename sets Content-Disposition header for subscription file download with date
-func (a *SUBController) ApplySubscriptionFilename(c *gin.Context, subId, extension string) {
-	// Generate filename with date (YYYYMMDD format)
-	currentTime := time.Now().Format("20060102")
-	filename := fmt.Sprintf("%s_%s.%s", subId, currentTime, extension)
-
-	// Set Content-Disposition header with UTF-8 URL-encoded filename
-	c.Writer.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename*=UTF-8''%s", url.PathEscape(filename)))
-}
-
-// generateClash handles Clash subscription generation requests
-func (a *SUBController) generateClash(c *gin.Context) {
-	uuid := c.Query("uuid")
-	password := c.Query("password")
-	count := c.Query("count")
-	domain := c.Query("domain")
-	prefix := c.Query("prefix")
-
-	// 验证参数
-	if uuid == "" && password == "" {
-		c.String(400, "uuid 或 password 缺失，请检查节点内容")
-		return
+	if profileRoutingRules != "" {
+		c.Writer.Header().Set("Routing", profileRoutingRules)
 	}
-
-	// 从设置获取默认值
-	settingService := new(service.SettingService)
-
-	// 获取订阅端口
-	subPort, err := settingService.GetSubPort()
-	if err != nil {
-		subPort = 2096
-	}
-
-	// 获取订阅域名
-	subDomain, err := settingService.GetSubDomain()
-	if err != nil || subDomain == "" {
-		subDomain = strings.Split(c.Request.Host, ":")[0]
-	}
-
-	// 获取 Clash 默认配置
-	if count == "" {
-		defaultCount, err := settingService.GetClashCount()
-		if err == nil {
-			count = fmt.Sprintf("%d", defaultCount)
-		} else {
-			count = "28"
-		}
-	}
-
-	if domain == "" {
-		clashDomain, err := settingService.GetClashDomain()
-		if err == nil && clashDomain != "" {
-			domain = clashDomain
-		} else {
-			// 使用订阅域名
-			domain = subDomain
-		}
-	}
-
-	if prefix == "" {
-		clashPrefix, err := settingService.GetClashPrefix()
-		if err == nil {
-			prefix = clashPrefix
-		} else {
-			prefix = "cdn"
-		}
-	}
-
-	countInt := 1
-	if _, err := fmt.Sscanf(count, "%d", &countInt); err != nil || countInt < 1 {
-		c.String(400, "请输入生成数量")
-		return
-	}
-
-	// 生成配置
-	// 获取订阅 URI（用于 rule-providers，不含端口）
-	subURI, err := settingService.GetSubURI()
-	if err != nil || subURI == "" {
-		// 如果没有配置订阅 URI，构造默认的（不含端口）
-		subURI = fmt.Sprintf("%s://%s", a.getScheme(c), subDomain)
-	}
-	// 移除 URI 末尾的路径（如 /sub/）
-	if idx := strings.LastIndex(subURI, "/"); idx > 8 { // 8 = len("https://")
-		subURI = subURI[:idx]
-	}
-
-	// 获取自定义规则与完整规则配置
-	customRules, err := settingService.GetClashCustomRules()
-	if err != nil {
-		customRules = ""
-	}
-	ruleProvidersText, err := settingService.GetClashRuleProviders()
-	if err != nil {
-		ruleProvidersText = ""
-	}
-	clashRulesText, err := settingService.GetClashRules()
-	if err != nil {
-		clashRulesText = ""
-	}
-
-	// 低速专线默认开启（xcdn节点）
-	config, err := a.clashService.GenerateClashConfig(uuid, password, domain, countInt, prefix, subURI, subPort, customRules, ruleProvidersText, clashRulesText)
-	if err != nil {
-		c.String(500, "生成配置失败: %v", err)
-		return
-	}
-
-	// 获取客户端流量信息并设置Header
-	var upload, download, total int64
-	var email string
-	var expiryTime int64
-
-	// 查询客户端信息
-	inbound, client, err := a.clientService.SearchInboundAndClient(uuid, password)
-	if err == nil && inbound != nil && client != nil {
-		if e, ok := client["email"].(string); ok {
-			email = e
-		}
-
-		// 获取到期时间（毫秒转秒）
-		if expiry, ok := client["expiryTime"].(float64); ok && expiry > 0 {
-			expiryTime = int64(expiry / 1000) // 毫秒转Unix秒
-		} else {
-			// expiryTime不存在或为0，检查是否设置了自动续订周期
-			if reset, ok := client["reset"].(float64); ok && reset > 0 {
-				// 未激活但有周期，显示当前时间+周期天数
-				expiryTime = time.Now().Unix() + int64(reset*24*3600)
-			}
-			// 否则expiryTime保持为0（长期有效）
-		}
-
-		// 获取流量统计 - ClientStats是[]xray.ClientTraffic类型
-		for _, stat := range inbound.ClientStats {
-			if stat.Email == email {
-				upload += stat.Up
-				download += stat.Down
-				total = stat.Total
-				break
-			}
-		}
-	}
-
-	// 设置Subscription-UserInfo头（流量信息+到期时间）
-	if total > 0 || expiryTime > 0 {
-		// upload=已上传; download=已下载; total=总流量; expire=过期时间戳
-		userInfo := fmt.Sprintf("upload=%d; download=%d; total=%d; expire=%d", upload, download, total, expiryTime)
-		c.Header("Subscription-UserInfo", userInfo)
-
-	}
-
-	// 设置文件名和订阅名称（使用邮箱）
-	filename := "clash.yaml"
-	if email != "" {
-		filename = email + ".yaml"
-		c.Header("profile-title", base64.StdEncoding.EncodeToString([]byte(email)))
-	}
-	c.Header("content-disposition", fmt.Sprintf("attachment; filename*=UTF-8''%s", url.PathEscape(filename)))
-
-	// 设置自动更新间隔为12小时
-	c.Header("profile-update-interval", "12")
-
-	// 返回 YAML
-	yamlContent := config.ToYAML()
-	c.Data(200, "text/plain;charset=utf-8", []byte(yamlContent))
-}
-
-// getClashRules handles Clash rules proxy requests
-func (a *SUBController) getClashRules(c *gin.Context) {
-	ruleType := c.Param("type")
-
-	content, err := a.clashService.GetRules(ruleType)
-	if err != nil {
-		c.String(500, "获取规则失败: %v", err)
-		return
-	}
-
-	c.Data(200, "text/plain;charset=utf-8", []byte(content))
-}
-
-// getScheme returns the scheme (http or https) from the request
-func (a *SUBController) getScheme(c *gin.Context) string {
-	if c.Request.TLS != nil {
-		return "https"
-	}
-	if scheme := c.GetHeader("X-Forwarded-Proto"); scheme != "" {
-		return scheme
-	}
-	return "http"
 }
