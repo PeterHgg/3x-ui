@@ -138,14 +138,16 @@
                         tag: 'warp',
                         protocol: Protocols.Wireguard,
                         settings: {
-                            mtu: 1280,
+                            mtu: 1420,
                             secretKey: warpModal.warpData.private_key,
                             address: this.getAddresses(config.interface.addresses),
                             reserved: this.getResolved(config.client_id),
+                            workers: 2,
                             domainStrategy: 'ForceIPv6v4',
                             peers: [{
                                 publicKey: peer.public_key,
-                                endpoint: peer.endpoint.v4 ? peer.endpoint.v4.replace(/:.*/, ':2408') : peer.endpoint.host,
+                                endpoint: '162.159.192.5:2408',
+                                keepAlive: 30,
                             }],
                             noKernelTun: true,
                         }
