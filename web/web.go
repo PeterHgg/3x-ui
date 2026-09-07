@@ -295,6 +295,15 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 // startTask schedules background jobs (Xray checks, traffic jobs, cron
 // jobs) which the panel relies on for periodic maintenance and monitoring.
 func (s *Server) startTask() {
+	// Start in-process WARP proxy daemon if configured
+	go func() {
+		time.Sleep(1 * time.Second)
+		warpService := service.WarpService{SettingService: s.settingService}
+		if err := warpService.StartDaemonFromStoredConfig(); err != nil {
+			logger.Warning("[WARP] Auto-start daemon failed:", err)
+		}
+	}()
+
 	err := s.xrayService.RestartXray(true)
 	if err != nil {
 		logger.Warning("start xray failed:", err)
