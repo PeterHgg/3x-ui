@@ -132,15 +132,24 @@
         methods: {
             collectConfig() {
                 config = warpModal.warpConfig.config;
+                peer = config.peers[0];
                 if (config) {
                     warpModal.warpOutbound = Outbound.fromJson({
                         tag: 'warp',
-                        protocol: Protocols.Socks,
+                        protocol: Protocols.Wireguard,
                         settings: {
-                            servers: [{
-                                address: '127.0.0.1',
-                                port: 40000
-                            }]
+                            mtu: 1420,
+                            secretKey: warpModal.warpData.private_key,
+                            address: this.getAddresses(config.interface.addresses),
+                            reserved: this.getResolved(config.client_id),
+                            workers: 2,
+                            domainStrategy: 'ForceIPv6v4',
+                            peers: [{
+                                publicKey: peer.public_key,
+                                endpoint: '162.159.192.1:500',
+                                keepAlive: 30,
+                            }],
+                            noKernelTun: true,
                         }
                     });
                 }

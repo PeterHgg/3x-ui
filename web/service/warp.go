@@ -2,12 +2,10 @@ package service
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/mhsanaei/3x-ui/v2/logger"
@@ -29,7 +27,6 @@ func (s *WarpService) GetWarpData() (string, error) {
 }
 
 func (s *WarpService) DelWarpData() error {
-	GetWarpDaemon().Stop()
 	err := s.SettingService.SetWarp("")
 	if err != nil {
 		return err
@@ -42,9 +39,6 @@ func (s *WarpService) GetWarpConfig() (string, error) {
 	warp, err := s.SettingService.GetWarp()
 	if err != nil {
 		return "", err
-	}
-	if warp == "" {
-		return "", fmt.Errorf("no WARP data found")
 	}
 	err = json.Unmarshal([]byte(warp), &warpData)
 	if err != nil {
@@ -59,7 +53,7 @@ func (s *WarpService) GetWarpConfig() (string, error) {
 	}
 	req.Header.Set("Authorization", "Bearer "+warpData["access_token"])
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
@@ -89,7 +83,7 @@ func (s *WarpService) RegWarp(secretKey string, publicKey string) (string, error
 	req.Header.Add("CF-Client-Version", "a-7.21-0721")
 	req.Header.Add("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
@@ -107,8 +101,8 @@ func (s *WarpService) RegWarp(secretKey string, publicKey string) (string, error
 		return "", err
 	}
 
-	deviceId, _ := rspData["id"].(string)
-	token, _ := rspData["token"].(string)
+	deviceId := rspData["id"].(string)
+	token := rspData["token"].(string)
 	license, ok := rspData["account"].(map[string]any)["license"].(string)
 	if !ok {
 		logger.Debug("Error accessing license value.")
@@ -119,8 +113,6 @@ func (s *WarpService) RegWarp(secretKey string, publicKey string) (string, error
 	warpData += fmt.Sprintf("\n  \"license_key\": \"%s\",\n  \"private_key\": \"%s\"\n}", license, secretKey)
 
 	s.SettingService.SetWarp(warpData)
-
-	_ = s.StartDaemonFromAccountAndConfig(warpData, buffer.String())
 
 	result := fmt.Sprintf("{\n  \"data\": %s,\n  \"config\": %s\n}", warpData, buffer.String())
 
@@ -147,7 +139,7 @@ func (s *WarpService) SetWarpLicense(license string) (string, error) {
 	}
 	req.Header.Set("Authorization", "Bearer "+warpData["access_token"])
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
@@ -178,79 +170,4 @@ func (s *WarpService) SetWarpLicense(license string) (string, error) {
 	s.SettingService.SetWarp(string(newWarpData))
 
 	return string(newWarpData), nil
-}
-
-// StartDaemonFromAccountAndConfig parses WARP registration data and starts the in-process proxy daemon.
-func (s *WarpService) StartDaemonFromAccountAndConfig(warpDataStr string, configStr string) error {
-	var warpData map[string]string
-	if err := json.Unmarshal([]byte(warpDataStr), &warpData); err != nil {
-		return err
-	}
-	var cfgData map[string]any
-	if err := json.Unmarshal([]byte(configStr), &cfgData); err != nil {
-		return err
-	}
-
-	configObj, ok := cfgData["config"].(map[string]any)
-	if !ok {
-		configObj = cfgData
-	}
-
-	clientId, _ := configObj["client_id"].(string)
-	var reserved []byte
-	if clientId != "" {
-		if dec, err := base64.StdEncoding.DecodeString(clientId); err == nil && len(dec) >= 3 {
-			reserved = dec[:3]
-		}
-	}
-
-	peers, _ := configObj["peers"].([]any)
-	if len(peers) == 0 {
-		return fmt.Errorf("no peers found in WARP config")
-	}
-	peerObj, _ := peers[0].(map[string]any)
-	pubKey, _ := peerObj["public_key"].(string)
-
-	endpointObj, _ := peerObj["endpoint"].(map[string]any)
-	endpointStr := "162.159.192.5:2408"
-	if v4, ok := endpointObj["v4"].(string); ok && v4 != "" {
-		endpointStr = strings.Split(v4, ":")[0] + ":2408"
-	} else if host, ok := endpointObj["host"].(string); ok && host != "" {
-		endpointStr = host
-	}
-
-	ifaceObj, _ := configObj["interface"].(map[string]any)
-	addressesObj, _ := ifaceObj["addresses"].(map[string]any)
-	var addresses []string
-	if v4, ok := addressesObj["v4"].(string); ok && v4 != "" {
-		addresses = append(addresses, v4+"/32")
-	}
-	if v6, ok := addressesObj["v6"].(string); ok && v6 != "" {
-		addresses = append(addresses, v6+"/128")
-	}
-
-	daemonCfg := &WarpDaemonConfig{
-		PrivateKey: warpData["private_key"],
-		PublicKey:  pubKey,
-		Endpoint:   endpointStr,
-		Addresses:  addresses,
-		Reserved:   reserved,
-		MTU:        1420,
-		KeepAlive:  30,
-	}
-
-	return GetWarpDaemon().Start(daemonCfg)
-}
-
-// StartDaemonFromStoredConfig fetches configuration from Cloudflare and starts the in-process daemon.
-func (s *WarpService) StartDaemonFromStoredConfig() error {
-	warpData, err := s.GetWarpData()
-	if err != nil || warpData == "" {
-		return nil
-	}
-	configStr, err := s.GetWarpConfig()
-	if err != nil {
-		return err
-	}
-	return s.StartDaemonFromAccountAndConfig(warpData, configStr)
 }
