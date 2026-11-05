@@ -548,7 +548,6 @@
           'IP-CIDR6,::1/128,DIRECT,no-resolve',
           'IP-CIDR6,fc00::/7,DIRECT,no-resolve',
           'IP-CIDR6,fe80::/10,DIRECT,no-resolve',
-          'IP-CIDR6,fd00::/8,DIRECT,no-resolve',
           'RULE-SET,applications,DIRECT',
           'DOMAIN,clash.razord.top,DIRECT',
           'DOMAIN,yacd.haishan.me,DIRECT',
@@ -558,10 +557,10 @@
           'RULE-SET,google,🚀 手动切换',
           'RULE-SET,proxy,🚀 手动切换',
           'RULE-SET,direct,DIRECT',
-          'RULE-SET,lancidr,DIRECT',
-          'RULE-SET,cncidr,DIRECT',
-          'RULE-SET,telegramcidr,🚀 手动切换',
-          'GEOIP,LAN,DIRECT',
+          'RULE-SET,lancidr,DIRECT,no-resolve',
+          'RULE-SET,telegramcidr,🚀 手动切换,no-resolve',
+          'RULE-SET,cncidr,DIRECT,no-resolve',
+          'GEOIP,LAN,DIRECT,no-resolve',
           'GEOIP,CN,DIRECT,no-resolve',
           'MATCH,🎯 兜底规则',
         ];
@@ -616,8 +615,8 @@
       resetClashRuleMerged() {
         this.allSetting.clashRuleProviders = '';
         this.allSetting.clashRules = '';
-        this.allSetting.clashCustomRules = '';
-        this.clashRuleMerged = this.getDefaultClashRuleMerged();
+        this.allSetting.clashCustomRules = new AllSetting().clashCustomRules;
+        this.clashRuleMerged = this.getDefaultClashRuleMerged(this.allSetting.clashCustomRules);
       },
       applyClashRuleMerged() {
         const text = (this.clashRuleMerged || '').replace(/\r\n/g, '\n');

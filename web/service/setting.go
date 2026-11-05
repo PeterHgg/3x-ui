@@ -117,13 +117,16 @@ var defaultValueMap = map[string]string{
 DOMAIN-SUFFIX,mcdn.bilivideo.com,REJECT
 DOMAIN-SUFFIX,mcdn.bilivideo.cn,REJECT
 DOMAIN-SUFFIX,edge.mountaintoys.cn,REJECT
-DOMAIN-SUFFIX,scaleway.com,DIRECT
+DOMAIN-SUFFIX,scaleway.com,🚀 手动切换
 DOMAIN-SUFFIX,linux.do,🚀 手动切换
+DOMAIN-SUFFIX,api.theoneai.io,🚀 手动切换
+DOMAIN-SUFFIX,cashcatapi.com,DIRECT
+DOMAIN-SUFFIX,ad.weibo.com,🚀 手动切换
 DOMAIN-SUFFIX,epicgames.com,DIRECT
 DOMAIN-SUFFIX,epicgames.dev,DIRECT
 DOMAIN-SUFFIX,epicgames.net,DIRECT
 DOMAIN-SUFFIX,unrealengine.com,DIRECT
-DOMAIN,steamcdn-a.akamaihd.net,DIRECT
+DOMAIN-SUFFIX,appsflyer.com,DIRECT
 DOMAIN-SUFFIX,cm.steampowered.com,DIRECT
 DOMAIN-SUFFIX,steamserver.net,DIRECT
 DOMAIN,steam-chat.com,🚀 手动切换
@@ -134,7 +137,6 @@ DOMAIN-SUFFIX,steamcommunity.com,🚀 手动切换
 DOMAIN-SUFFIX,steamgames.com,DIRECT
 DOMAIN-SUFFIX,steamusercontent.com,DIRECT
 DOMAIN-SUFFIX,steamcontent.com,🚀 手动切换
-DOMAIN-SUFFIX,steamstatic.com,DIRECT
 DOMAIN-SUFFIX,steamcdn-a.akamaihd.net,DIRECT
 DOMAIN-SUFFIX,steamstat.us,DIRECT`,
 	"clashRuleProviders": "",

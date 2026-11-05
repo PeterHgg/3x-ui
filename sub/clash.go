@@ -31,13 +31,24 @@ type ClashProfile struct {
 
 // DNS 配置
 type ClashDNS struct {
-	Enable         bool                `yaml:"enable"`
-	IPv6           bool                `yaml:"ipv6"`
-	EnhancedMode   string              `yaml:"enhanced-mode"`
-	FakeIPRange    string              `yaml:"fake-ip-range"`
-	Nameserver     []string            `yaml:"nameserver"`
-	Fallback       []string            `yaml:"fallback,omitempty"`
-	FallbackFilter ClashFallbackFilter `yaml:"fallback-filter,omitempty"`
+	Enable                       bool                `yaml:"enable"`
+	IPv6                         bool                `yaml:"ipv6"`
+	EnhancedMode                 string              `yaml:"enhanced-mode"`
+	FakeIPRange                  string              `yaml:"fake-ip-range"`
+	RespectRules                 bool                `yaml:"respect-rules"`
+	Nameserver                   []string            `yaml:"nameserver"`
+	ProxyServerNameserver        []string            `yaml:"proxy-server-nameserver,omitempty"`
+	DirectNameserver             []string            `yaml:"direct-nameserver,omitempty"`
+	DirectNameserverFollowPolicy bool                `yaml:"direct-nameserver-follow-policy"`
+	NameserverPolicy             []ClashDNSPolicy    `yaml:"-"`
+	Fallback                     []string            `yaml:"fallback,omitempty"`
+	FallbackFilter               ClashFallbackFilter `yaml:"fallback-filter,omitempty"`
+}
+
+// DNS 策略必须保留规则顺序，不能使用遍历顺序不确定的 map。
+type ClashDNSPolicy struct {
+	Domain      string
+	Nameservers []string
 }
 
 // Clash DNS Fallback-Filter 配置
@@ -136,6 +147,30 @@ func (c *ClashConfig) ToYAML() string {
 		sb.WriteString("  nameserver:\n")
 		for _, ns := range c.DNS.Nameserver {
 			sb.WriteString(fmt.Sprintf("    - %s\n", ns))
+		}
+		sb.WriteString(fmt.Sprintf("  respect-rules: %t\n", c.DNS.RespectRules))
+		writeNameservers := func(key string, servers []string) {
+			if len(servers) == 0 {
+				return
+			}
+			sb.WriteString("  " + key + ":\n")
+			for _, server := range servers {
+				sb.WriteString(fmt.Sprintf("    - '%s'\n", strings.ReplaceAll(server, "'", "''")))
+			}
+		}
+		writeNameservers("proxy-server-nameserver", c.DNS.ProxyServerNameserver)
+		writeNameservers("direct-nameserver", c.DNS.DirectNameserver)
+		if len(c.DNS.DirectNameserver) > 0 {
+			sb.WriteString(fmt.Sprintf("  direct-nameserver-follow-policy: %t\n", c.DNS.DirectNameserverFollowPolicy))
+		}
+		if len(c.DNS.NameserverPolicy) > 0 {
+			sb.WriteString("  nameserver-policy:\n")
+			for _, policy := range c.DNS.NameserverPolicy {
+				sb.WriteString(fmt.Sprintf("    '%s':\n", strings.ReplaceAll(policy.Domain, "'", "''")))
+				for _, server := range policy.Nameservers {
+					sb.WriteString(fmt.Sprintf("      - '%s'\n", strings.ReplaceAll(server, "'", "''")))
+				}
+			}
 		}
 		if len(c.DNS.Fallback) > 0 {
 			sb.WriteString("  fallback:\n")
