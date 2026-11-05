@@ -53,7 +53,7 @@ func TestClashDNSDefaultsAndYAML(t *testing.T) {
 		len(decoded.DNS.DirectNameserver) != 1 || decoded.DNS.DirectNameserver[0] != "system" {
 		t.Fatal("node bootstrap and DIRECT must use system DNS")
 	}
-	if decoded.DNS.Policy["+.example.cn"][0] != "system" ||
+	if len(decoded.DNS.Policy) != 2 || decoded.DNS.Policy["rule-set:direct"][0] != "system" ||
 		!strings.HasSuffix(decoded.DNS.Policy["rule-set:google"][0], "#🚀 手动切换") {
 		t.Fatal("DNS policies did not survive YAML serialization")
 	}
@@ -62,7 +62,7 @@ func TestClashDNSDefaultsAndYAML(t *testing.T) {
 	}
 }
 
-func TestClashDNSMergesOnlyAdjacentCompatiblePolicies(t *testing.T) {
+func TestClashDNSMergesGeneralRuleSetsWithoutCustomDomains(t *testing.T) {
 	providers := map[string]ClashRuleProvider{
 		"private": {Behavior: "domain"},
 		"icloud":  {Behavior: "domain"},
@@ -86,13 +86,9 @@ func TestClashDNSMergesOnlyAdjacentCompatiblePolicies(t *testing.T) {
 	}
 	dns := generateClashDNS(rules, providers)
 	want := []string{
-		"+.first.example,second.example",
 		"rule-set:private,icloud,apple",
 		"rule-set:google,proxy",
 		"rule-set:direct",
-		"local.example",
-		"override.local.example",
-		"last.example",
 	}
 	var got []string
 	for _, policy := range dns.NameserverPolicy {
@@ -124,6 +120,9 @@ func TestClashDNSCustomProvidersAndFirstMatch(t *testing.T) {
 		"RULE-SET,removed,DIRECT",
 		"RULE-SET,ip,DIRECT,no-resolve",
 		"RULE-SET,applications,DIRECT",
+		"RULE-SET,custom,DIRECT",
+		"RULE-SET,google,🚀 手动切换",
+		"RULE-SET,google,DIRECT",
 		"DOMAIN,blocked.example,REJECT",
 		"DOMAIN,local.example,DIRECT",
 		"MATCH,🎯 兜底规则",
@@ -131,16 +130,25 @@ func TestClashDNSCustomProvidersAndFirstMatch(t *testing.T) {
 	providers := map[string]ClashRuleProvider{
 		"ip":           {Behavior: "ipcidr"},
 		"applications": {Behavior: "classical"},
+		"custom":       {Behavior: "domain"},
+		"google":       {Behavior: "domain"},
 	}
+	originalRules := append([]string(nil), rules...)
 	dns := generateClashDNS(rules, providers)
-	if len(dns.NameserverPolicy) != 2 {
+	if !reflect.DeepEqual(rules, originalRules) {
+		t.Fatal("DNS generation must not modify routing rules")
+	}
+	if len(dns.NameserverPolicy) != 1 {
 		t.Fatalf("unexpected policies: %+v", dns.NameserverPolicy)
 	}
-	if dns.NameserverPolicy[0].Domain != "+.steamstatic.com" ||
+	if dns.NameserverPolicy[0].Domain != "rule-set:google" ||
 		!strings.HasSuffix(dns.NameserverPolicy[0].Nameservers[0], "#🚀 手动切换") {
-		t.Fatal("duplicate rules must not override first match")
+		t.Fatal("duplicate rule-set must not override first match")
 	}
-	if dns.NameserverPolicy[1].Domain != "local.example" || dns.NameserverPolicy[1].Nameservers[0] != "system" {
-		t.Fatal("custom DIRECT domain not reflected in DNS policy")
+	output := (&ClashConfig{DNS: dns}).ToYAML()
+	for _, domain := range []string{"steamstatic.com", "blocked.example", "local.example", "rule-set:custom"} {
+		if strings.Contains(output, domain) {
+			t.Errorf("custom domain or provider leaked into DNS configuration: %s", domain)
+		}
 	}
 }
