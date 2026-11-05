@@ -1,6 +1,9 @@
 package sub
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // 根据实际域名规则选择解析出口，保留完整覆盖和自定义规则的优先级。
 // 只引用现有的 domain provider，避免自定义 providers 后出现悬空引用。
@@ -50,6 +53,17 @@ func generateClashDNS(rules []string, providers map[string]ClashRuleProvider) Cl
 		servers := proxyDNS
 		if target == "DIRECT" {
 			servers = []string{"system"}
+		}
+		// 仅合并相邻、同出口且同语法类型的策略，不跨越其他策略。
+		// rule-set:a,b 与 a.example,b.example 使用不同语法，不能混合。
+		if n := len(dns.NameserverPolicy); n > 0 {
+			previous := &dns.NameserverPolicy[n-1]
+			isRuleSet := strings.HasPrefix(domain, "rule-set:")
+			if isRuleSet == strings.HasPrefix(previous.Domain, "rule-set:") &&
+				slices.Equal(previous.Nameservers, servers) {
+				previous.Domain += "," + strings.TrimPrefix(domain, "rule-set:")
+				continue
+			}
 		}
 		dns.NameserverPolicy = append(dns.NameserverPolicy, ClashDNSPolicy{
 			Domain: domain, Nameservers: servers,

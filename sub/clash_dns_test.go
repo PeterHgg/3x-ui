@@ -1,6 +1,7 @@
 package sub
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -58,6 +59,61 @@ func TestClashDNSDefaultsAndYAML(t *testing.T) {
 	}
 	if strings.Index(output, "'rule-set:google':") > strings.Index(output, "'rule-set:direct':") {
 		t.Fatal("DNS policy order differs from rule order")
+	}
+}
+
+func TestClashDNSMergesOnlyAdjacentCompatiblePolicies(t *testing.T) {
+	providers := map[string]ClashRuleProvider{
+		"private": {Behavior: "domain"},
+		"icloud":  {Behavior: "domain"},
+		"apple":   {Behavior: "domain"},
+		"google":  {Behavior: "domain"},
+		"proxy":   {Behavior: "domain"},
+		"direct":  {Behavior: "domain"},
+	}
+	rules := []string{
+		"DOMAIN-SUFFIX,first.example,DIRECT",
+		"DOMAIN,second.example,DIRECT",
+		"RULE-SET,private,DIRECT",
+		"RULE-SET,icloud,DIRECT",
+		"RULE-SET,apple,DIRECT",
+		"RULE-SET,google,🚀 手动切换",
+		"RULE-SET,proxy,🚀 手动切换",
+		"RULE-SET,direct,DIRECT",
+		"DOMAIN,local.example,DIRECT",
+		"DOMAIN,override.local.example,🚀 手动切换",
+		"DOMAIN,last.example,DIRECT",
+	}
+	dns := generateClashDNS(rules, providers)
+	want := []string{
+		"+.first.example,second.example",
+		"rule-set:private,icloud,apple",
+		"rule-set:google,proxy",
+		"rule-set:direct",
+		"local.example",
+		"override.local.example",
+		"last.example",
+	}
+	var got []string
+	for _, policy := range dns.NameserverPolicy {
+		got = append(got, policy.Domain)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("merged policies changed order or syntax: got %v, want %v", got, want)
+	}
+	output := (&ClashConfig{DNS: dns}).ToYAML()
+	var decoded struct {
+		DNS struct {
+			Policy map[string][]string `yaml:"nameserver-policy"`
+		} `yaml:"dns"`
+	}
+	if err := yaml.Unmarshal([]byte(output), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range want {
+		if len(decoded.DNS.Policy[key]) == 0 {
+			t.Errorf("merged key missing from YAML: %s", key)
+		}
 	}
 }
 
