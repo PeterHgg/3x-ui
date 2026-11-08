@@ -8,147 +8,76 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-func TestClashDNSDefaultsAndYAML(t *testing.T) {
-	providers := map[string]ClashRuleProvider{
-		"direct": {Behavior: "domain"},
-		"google": {Behavior: "domain"},
-	}
-	rules := []string{
-		"DOMAIN-SUFFIX,example.cn,DIRECT",
-		"RULE-SET,google,🚀 手动切换",
-		"RULE-SET,direct,DIRECT",
-	}
-	dns := generateClashDNS(rules, providers)
-	if !dns.Enable || dns.EnhancedMode != "redir-host" || dns.RespectRules {
+func TestClashDNSCompatibilityDefaultsAndYAML(t *testing.T) {
+	dns := generateClashDNS()
+	if !dns.Enable || dns.EnhancedMode != "redir-host" || dns.IPv6 {
 		t.Fatalf("unexpected DNS defaults: %+v", dns)
 	}
-	if len(dns.Fallback) != 0 || dns.FakeIPRange != "" {
-		t.Fatal("must not enable fake-ip or local fallback")
+	if !reflect.DeepEqual(dns.Nameserver, []string{"system"}) || len(dns.Fallback) != 0 || dns.FakeIPRange != "" {
+		t.Fatal("compatibility DNS must use system without fake-ip or public fallback")
 	}
-	for _, ns := range dns.Nameserver {
-		if !strings.HasSuffix(ns, "#🚀 手动切换") {
-			t.Fatalf("DNS is not pinned to proxy: %q", ns)
-		}
-	}
-	config := ClashConfig{DNS: dns, Profile: ClashProfile{StoreSelected: true}}
+	config := ClashConfig{DNS: dns, Profile: ClashProfile{StoreSelected: true, Interval: 12}}
 	output := config.ToYAML()
+	// 模拟旧版解析器的字符串型 policy，防止重新输出数组策略。
 	var decoded struct {
 		DNS struct {
-			Nameserver            []string            `yaml:"nameserver"`
-			ProxyServerNameserver []string            `yaml:"proxy-server-nameserver"`
-			DirectNameserver      []string            `yaml:"direct-nameserver"`
-			Policy                map[string][]string `yaml:"nameserver-policy"`
+			Enable       bool              `yaml:"enable"`
+			IPv6         bool              `yaml:"ipv6"`
+			EnhancedMode string            `yaml:"enhanced-mode"`
+			Nameserver   []string          `yaml:"nameserver"`
+			Policy       map[string]string `yaml:"nameserver-policy"`
 		} `yaml:"dns"`
 		Profile struct {
 			StoreSelected bool `yaml:"store-selected"`
+			Interval      int  `yaml:"interval"`
 		} `yaml:"profile"`
 	}
 	if err := yaml.Unmarshal([]byte(output), &decoded); err != nil {
-		t.Fatalf("invalid YAML: %v\n%s", err, output)
+		t.Fatalf("invalid compatibility YAML: %v\n%s", err, output)
 	}
-	if !decoded.Profile.StoreSelected || len(decoded.DNS.Nameserver) != 2 {
-		t.Fatal("DNS serialization changed other top-level fields")
+	if !decoded.DNS.Enable || decoded.DNS.EnhancedMode != "redir-host" ||
+		!reflect.DeepEqual(decoded.DNS.Nameserver, []string{"system"}) || len(decoded.DNS.Policy) != 0 {
+		t.Fatal("DNS serialization changed compatibility defaults")
 	}
-	if len(decoded.DNS.ProxyServerNameserver) != 1 || decoded.DNS.ProxyServerNameserver[0] != "system" ||
-		len(decoded.DNS.DirectNameserver) != 1 || decoded.DNS.DirectNameserver[0] != "system" {
-		t.Fatal("node bootstrap and DIRECT must use system DNS")
+	if !decoded.Profile.StoreSelected || decoded.Profile.Interval != 12 {
+		t.Fatal("DNS serialization changed profile settings")
 	}
-	if len(decoded.DNS.Policy) != 2 || decoded.DNS.Policy["rule-set:direct"][0] != "system" ||
-		!strings.HasSuffix(decoded.DNS.Policy["rule-set:google"][0], "#🚀 手动切换") {
-		t.Fatal("DNS policies did not survive YAML serialization")
-	}
-	if strings.Index(output, "'rule-set:google':") > strings.Index(output, "'rule-set:direct':") {
-		t.Fatal("DNS policy order differs from rule order")
+	for _, unsupported := range []string{
+		"nameserver-policy:", "proxy-server-nameserver:", "direct-nameserver:",
+		"direct-nameserver-follow-policy:", "respect-rules:", "follow-rule:",
+		"#🚀", "dns-query", "fake-ip-range:", "tun:",
+	} {
+		if strings.Contains(output, unsupported) {
+			t.Errorf("compatibility YAML contains unsupported or unintended setting: %s", unsupported)
+		}
 	}
 }
 
-func TestClashDNSMergesGeneralRuleSetsWithoutCustomDomains(t *testing.T) {
-	providers := map[string]ClashRuleProvider{
-		"private": {Behavior: "domain"},
-		"icloud":  {Behavior: "domain"},
-		"apple":   {Behavior: "domain"},
-		"google":  {Behavior: "domain"},
-		"proxy":   {Behavior: "domain"},
-		"direct":  {Behavior: "domain"},
+func TestClashCompatibilityDNSPreservesRoutingAndNodes(t *testing.T) {
+	s := &ClashService{}
+	rules := s.generateRules("DOMAIN-SUFFIX,linux.do,🚀 手动切换", "")
+	originalRules := append([]string(nil), rules...)
+	config := ClashConfig{
+		DNS: generateClashDNS(), Rules: rules,
+		Proxies:       []ClashProxy{{Name: "test-node", Type: "socks5", Server: "127.0.0.1", Port: 9}},
+		ProxyGroups:   []ClashProxyGroup{{Name: "🚀 手动切换", Type: "select", Proxies: []string{"test-node"}}},
+		RuleProviders: s.generateRuleProviders("https://example.invalid", ""),
 	}
-	rules := []string{
-		"DOMAIN-SUFFIX,first.example,DIRECT",
-		"DOMAIN,second.example,DIRECT",
-		"RULE-SET,private,DIRECT",
-		"RULE-SET,icloud,DIRECT",
-		"RULE-SET,apple,DIRECT",
-		"RULE-SET,google,🚀 手动切换",
-		"RULE-SET,proxy,🚀 手动切换",
-		"RULE-SET,direct,DIRECT",
-		"DOMAIN,local.example,DIRECT",
-		"DOMAIN,override.local.example,🚀 手动切换",
-		"DOMAIN,last.example,DIRECT",
-	}
-	dns := generateClashDNS(rules, providers)
-	want := []string{
-		"rule-set:private,icloud,apple",
-		"rule-set:google,proxy",
-		"rule-set:direct",
-	}
-	var got []string
-	for _, policy := range dns.NameserverPolicy {
-		got = append(got, policy.Domain)
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("merged policies changed order or syntax: got %v, want %v", got, want)
-	}
-	output := (&ClashConfig{DNS: dns}).ToYAML()
 	var decoded struct {
-		DNS struct {
-			Policy map[string][]string `yaml:"nameserver-policy"`
-		} `yaml:"dns"`
+		Rules         []string                     `yaml:"rules"`
+		Proxies       []ClashProxy                 `yaml:"proxies"`
+		ProxyGroups   []ClashProxyGroup            `yaml:"proxy-groups"`
+		RuleProviders map[string]ClashRuleProvider `yaml:"rule-providers"`
 	}
-	if err := yaml.Unmarshal([]byte(output), &decoded); err != nil {
+	if err := yaml.Unmarshal([]byte(config.ToYAML()), &decoded); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range want {
-		if len(decoded.DNS.Policy[key]) == 0 {
-			t.Errorf("merged key missing from YAML: %s", key)
-		}
+	if !reflect.DeepEqual(decoded.Rules, originalRules) || !reflect.DeepEqual(rules, originalRules) {
+		t.Fatal("compatibility DNS changed routing rules")
 	}
-}
-
-func TestClashDNSCustomProvidersAndFirstMatch(t *testing.T) {
-	rules := []string{
-		"DOMAIN-SUFFIX,steamstatic.com,🚀 手动切换",
-		"DOMAIN-SUFFIX,steamstatic.com,DIRECT",
-		"RULE-SET,removed,DIRECT",
-		"RULE-SET,ip,DIRECT,no-resolve",
-		"RULE-SET,applications,DIRECT",
-		"RULE-SET,custom,DIRECT",
-		"RULE-SET,google,🚀 手动切换",
-		"RULE-SET,google,DIRECT",
-		"DOMAIN,blocked.example,REJECT",
-		"DOMAIN,local.example,DIRECT",
-		"MATCH,🎯 兜底规则",
-	}
-	providers := map[string]ClashRuleProvider{
-		"ip":           {Behavior: "ipcidr"},
-		"applications": {Behavior: "classical"},
-		"custom":       {Behavior: "domain"},
-		"google":       {Behavior: "domain"},
-	}
-	originalRules := append([]string(nil), rules...)
-	dns := generateClashDNS(rules, providers)
-	if !reflect.DeepEqual(rules, originalRules) {
-		t.Fatal("DNS generation must not modify routing rules")
-	}
-	if len(dns.NameserverPolicy) != 1 {
-		t.Fatalf("unexpected policies: %+v", dns.NameserverPolicy)
-	}
-	if dns.NameserverPolicy[0].Domain != "rule-set:google" ||
-		!strings.HasSuffix(dns.NameserverPolicy[0].Nameservers[0], "#🚀 手动切换") {
-		t.Fatal("duplicate rule-set must not override first match")
-	}
-	output := (&ClashConfig{DNS: dns}).ToYAML()
-	for _, domain := range []string{"steamstatic.com", "blocked.example", "local.example", "rule-set:custom"} {
-		if strings.Contains(output, domain) {
-			t.Errorf("custom domain or provider leaked into DNS configuration: %s", domain)
-		}
+	if !reflect.DeepEqual(decoded.Proxies, config.Proxies) ||
+		!reflect.DeepEqual(decoded.ProxyGroups, config.ProxyGroups) ||
+		!reflect.DeepEqual(decoded.RuleProviders, config.RuleProviders) {
+		t.Fatal("compatibility DNS changed nodes, groups or rule providers")
 	}
 }

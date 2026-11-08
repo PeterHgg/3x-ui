@@ -87,7 +87,7 @@ func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, cou
 			Tracing:       false,
 			Interval:      12, // 12小时自动更新
 		},
-		DNS:           generateClashDNS(rules, ruleProviders),
+		DNS:           generateClashDNS(),
 		Proxies:       allProxies,
 		ProxyGroups:   proxyGroups,
 		RuleProviders: ruleProviders,
