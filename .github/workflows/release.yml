@@ -23,7 +23,12 @@ jobs:
           go-version-file: go.mod
           check-latest: true
 
+      - name: Test release downloader
+        run: python3 -I -m unittest discover -s .github/scripts -p 'test_*.py' -v
+
       - name: Build 3X-UI
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           export CGO_ENABLED=1
           export GOOS=linux
@@ -58,30 +63,22 @@ jobs:
           mkdir x-ui/bin
           cd x-ui/bin
 
-          # Download dependencies (Updated to v26.2.2)
+          # 仅使用 GitHub 官方直链和资产 API；必要文件失败时中止构建。
           download() {
-            local url="$1"
-            local output="$2"
-            echo "Downloading: $url"
-            if [ -n "$output" ]; then
-              curl -fL --retry 3 --retry-delay 2 --retry-all-errors -o "$output" "$url"
-            else
-              curl -fL --retry 3 --retry-delay 2 --retry-all-errors -O "$url"
-            fi
+            python3 -I "$GITHUB_WORKSPACE/.github/scripts/download_release_asset.py" "$@"
           }
 
-          Xray_URL="https://github.com/XTLS/Xray-core/releases/download/v26.2.2/"
-          download "${Xray_URL}Xray-linux-64.zip"
+          download "XTLS/Xray-core" "v26.2.2" "Xray-linux-64.zip" "Xray-linux-64.zip"
           unzip Xray-linux-64.zip
           rm -f Xray-linux-64.zip
 
           rm -f geoip.dat geosite.dat
-          download "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat"
-          download "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat"
-          download "https://github.com/chocolate4u/Iran-v2ray-rules/releases/latest/download/geoip.dat" "geoip_IR.dat"
-          download "https://github.com/chocolate4u/Iran-v2ray-rules/releases/latest/download/geosite.dat" "geosite_IR.dat"
-          download "https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geoip.dat" "geoip_RU.dat"
-          download "https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geosite.dat" "geosite_RU.dat"
+          download "Loyalsoldier/v2ray-rules-dat" "latest" "geoip.dat" "geoip.dat"
+          download "Loyalsoldier/v2ray-rules-dat" "latest" "geosite.dat" "geosite.dat"
+          download "chocolate4u/Iran-v2ray-rules" "latest" "geoip.dat" "geoip_IR.dat"
+          download "chocolate4u/Iran-v2ray-rules" "latest" "geosite.dat" "geosite_IR.dat"
+          download "runetfreedom/russia-v2ray-rules-dat" "latest" "geoip.dat" "geoip_RU.dat"
+          download "runetfreedom/russia-v2ray-rules-dat" "latest" "geosite.dat" "geosite_RU.dat"
           mv xray xray-linux-amd64
           cd ../..
 
