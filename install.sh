@@ -76,29 +76,29 @@ is_port_in_use() {
 install_base() {
     case "${release}" in
         ubuntu | debian | armbian)
-            apt-get update && apt-get install -y -q curl tar tzdata socat ca-certificates
+            apt-get update && apt-get install -y -q curl tar tzdata socat ca-certificates python3
         ;;
         fedora | amzn | virtuozzo | rhel | almalinux | rocky | ol)
-            dnf -y update && dnf install -y -q curl tar tzdata socat ca-certificates
+            dnf -y update && dnf install -y -q curl tar tzdata socat ca-certificates python3
         ;;
         centos)
             if [[ "${VERSION_ID}" =~ ^7 ]]; then
-                yum -y update && yum install -y curl tar tzdata socat ca-certificates
+                yum -y update && yum install -y curl tar tzdata socat ca-certificates python3
             else
-                dnf -y update && dnf install -y -q curl tar tzdata socat ca-certificates
+                dnf -y update && dnf install -y -q curl tar tzdata socat ca-certificates python3
             fi
         ;;
         arch | manjaro | parch)
-            pacman -Syu && pacman -Syu --noconfirm curl tar tzdata socat ca-certificates
+            pacman -Syu && pacman -Syu --noconfirm curl tar tzdata socat ca-certificates python3
         ;;
         opensuse-tumbleweed | opensuse-leap)
-            zypper refresh && zypper -q install -y curl tar timezone socat ca-certificates
+            zypper refresh && zypper -q install -y curl tar timezone socat ca-certificates python3
         ;;
         alpine)
-            apk update && apk add curl tar tzdata socat ca-certificates
+            apk update && apk add curl tar tzdata socat ca-certificates python3
         ;;
         *)
-            apt-get update && apt-get install -y -q curl tar tzdata socat ca-certificates
+            apt-get update && apt-get install -y -q curl tar tzdata socat ca-certificates python3
         ;;
     esac
 }
@@ -724,12 +724,87 @@ config_after_install() {
     ${xui_folder}/x-ui migrate
 }
 
+# 所有下载和校验在停止旧服务之前完成；失败不覆盖现有文件。
+download_install_package() {
+    local version="$1" asset="x-ui-linux-$(arch).tar.gz"
+    local work metadata asset_id asset_size asset_digest url
+    work=$(mktemp -d) || return 1
+    metadata="$work/release.json"
+    if ! curl -fLsS --connect-timeout 20 --max-time 120 --retry 3 --retry-delay 15 --retry-all-errors \
+        "https://api.github.com/repos/PeterHgg/3x-ui/releases/tags/${version}" -o "$metadata"; then
+        rm -rf "$work"
+        return 1
+    fi
+    if ! python3 -I - "$metadata" "$asset" > "$work/asset" <<'PY'
+import json, sys
+with open(sys.argv[1]) as stream:
+    release = json.load(stream)
+asset = next(a for a in release['assets'] if a['name'] == sys.argv[2])
+print(int(asset['id']), int(asset['size']), asset.get('digest') or '-', sep='\n')
+PY
+    then
+        rm -rf "$work"
+        return 1
+    fi
+    { read -r asset_id; read -r asset_size; read -r asset_digest; } < "$work/asset"
+    for url in \
+        "https://github.com/PeterHgg/3x-ui/releases/download/${version}/${asset}" \
+        "https://api.github.com/repos/PeterHgg/3x-ui/releases/assets/${asset_id}"; do
+        echo "Downloading: $url"
+        if curl -fLsS --connect-timeout 20 --max-time 600 --retry 3 --retry-delay 15 --retry-all-errors \
+            -H 'Accept: application/octet-stream' "$url" -o "$work/package.tar.gz" && \
+            python3 -I - "$work/package.tar.gz" "$asset_size" "$asset_digest" <<'PY'
+import hashlib, sys, tarfile
+from pathlib import Path, PurePosixPath
+package = Path(sys.argv[1])
+if package.stat().st_size != int(sys.argv[2]):
+    raise ValueError('安装包大小与 Release 元数据不符')
+digest = sys.argv[3]
+if digest.startswith('sha256:'):
+    hasher = hashlib.sha256()
+    with package.open('rb') as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            hasher.update(chunk)
+    if hasher.hexdigest() != digest.partition(':')[2]:
+        raise ValueError('安装包 SHA256 校验失败')
+with tarfile.open(package, 'r:gz') as archive:
+    members = archive.getmembers()
+    for member in members:
+        path = PurePosixPath(member.name)
+        if path.is_absolute() or '..' in path.parts or not path.parts or path.parts[0] != 'x-ui':
+            raise ValueError('安装包包含不安全路径')
+        if not (member.isfile() or member.isdir()):
+            raise ValueError('安装包包含非普通文件或目录')
+    files = {str(PurePosixPath(m.name)): m for m in members if m.isfile()}
+    for name in ('x-ui/x-ui', 'x-ui/x-ui.sh'):
+        if name not in files or files[name].size == 0:
+            raise ValueError('安装包缺少必要文件: ' + name)
+    with archive.extractfile(files['x-ui/x-ui.sh']) as source:
+        with package.with_name('x-ui.sh').open('wb') as target:
+            target.write(source.read())
+PY
+        then
+            if ! bash -n "$work/x-ui.sh" || \
+                ! cp "$work/x-ui.sh" /usr/bin/x-ui-temp || \
+                ! mv "$work/package.tar.gz" "${xui_folder}-linux-$(arch).tar.gz"; then
+                rm -rf "$work"
+                return 1
+            fi
+            rm -rf "$work"
+            return 0
+        fi
+        echo "下载或校验失败，尝试下一条官方路径。" >&2
+    done
+    rm -rf "$work"
+    return 1
+}
+
 install_x-ui() {
-    cd ${xui_folder%/x-ui}/
+    cd "${xui_folder%/x-ui}/" || exit 1
     
     # Download resources
     if [ $# == 0 ]; then
-        tag_version=$(curl -Ls "https://api.github.com/repos/PeterHgg/3x-ui/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+        tag_version=$(curl -fLs --connect-timeout 20 --max-time 120 --retry 3 --retry-delay 15 --retry-all-errors "https://api.github.com/repos/PeterHgg/3x-ui/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
         if [[ ! -n "$tag_version" ]]; then
             echo -e "${yellow}Trying to fetch version with IPv4...${plain}"
             tag_version=$(curl -4 -Ls "https://api.github.com/repos/PeterHgg/3x-ui/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
@@ -739,11 +814,6 @@ install_x-ui() {
             fi
         fi
         echo -e "Got x-ui latest version: ${tag_version}, beginning the installation..."
-        curl -4fLRo ${xui_folder}-linux-$(arch).tar.gz https://github.com/PeterHgg/3x-ui/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz
-        if [[ $? -ne 0 ]]; then
-            echo -e "${red}Downloading x-ui failed, please be sure that your server can access GitHub ${plain}"
-            exit 1
-        fi
     else
         tag_version=$1
         tag_version_numeric=${tag_version#v}
@@ -754,17 +824,10 @@ install_x-ui() {
             exit 1
         fi
         
-        url="https://github.com/PeterHgg/3x-ui/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz"
         echo -e "Beginning to install x-ui $1"
-        curl -4fLRo ${xui_folder}-linux-$(arch).tar.gz ${url}
-        if [[ $? -ne 0 ]]; then
-            echo -e "${red}Download x-ui $1 failed, please check if the version exists ${plain}"
-            exit 1
-        fi
     fi
-    curl -4fLRo /usr/bin/x-ui-temp https://raw.githubusercontent.com/PeterHgg/3x-ui/main/x-ui.sh
-    if [[ $? -ne 0 ]]; then
-        echo -e "${red}Failed to download x-ui.sh${plain}"
+    if ! download_install_package "$tag_version"; then
+        echo -e "${red}下载或校验安装包失败，未停止或替换现有面板。${plain}"
         exit 1
     fi
     
