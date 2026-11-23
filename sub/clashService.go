@@ -87,7 +87,6 @@ func (s *ClashService) GenerateClashConfig(uuid, password, cdnDomain string, cou
 			Tracing:       false,
 			Interval:      12, // 12小时自动更新
 		},
-		DNS:           generateClashDNS(),
 		Proxies:       allProxies,
 		ProxyGroups:   proxyGroups,
 		RuleProviders: ruleProviders,
@@ -154,7 +153,7 @@ func (s *ClashService) generateCDNProxies(baseNodes []*model.Inbound, cdnDomain 
 				// 将名字改为主节点相同名字 + ⚡ 三网优选
 				xcdnProxy.Name = groupName + " ⚡ 三网优选"
 
-				// 放到负载均衡组内，并在稍后排到前面
+				// 保留节点定义，并让手动切换组单独引用；备用组会排除该节点
 				proxiesMap[groupName] = append([]ClashProxy{xcdnProxy}, proxiesMap[groupName]...)
 				xcdnProxyNames = append(xcdnProxyNames, xcdnProxy.Name)
 			}
@@ -313,12 +312,14 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, o
 	// 手动切换组的 Proxies 列表
 	var topLevelProxies []string
 
-	// 如果有 xcdn 节点，把它们放在最前面
-	if len(xcdnProxyNames) > 0 {
-		topLevelProxies = append(topLevelProxies, xcdnProxyNames...)
+	// xcdn 节点在手动切换中排在最前面，不加入任何备用组。
+	xcdnNames := make(map[string]struct{}, len(xcdnProxyNames))
+	for _, name := range xcdnProxyNames {
+		xcdnNames[name] = struct{}{}
 	}
+	topLevelProxies = append(topLevelProxies, xcdnProxyNames...)
 
-	// 2. 按排序后的顺序创建 load-balance 组
+	// 2. 按线路顺序创建测速优选组和负载均衡组
 	for _, groupName := range orderedGroupNames {
 		proxies, ok := proxiesMap[groupName]
 		if !ok {
@@ -327,26 +328,29 @@ func (s *ClashService) generateProxyGroups(proxiesMap map[string][]ClashProxy, o
 
 		var proxyNames []string
 		for _, p := range proxies {
-			proxyNames = append(proxyNames, p.Name)
+			if _, isXcdn := xcdnNames[p.Name]; !isXcdn {
+				proxyNames = append(proxyNames, p.Name)
+			}
+		}
+		if len(proxyNames) == 0 {
+			continue
 		}
 
-		proxyGroupName := groupName
-		if len(xcdnProxyNames) > 0 {
-			proxyGroupName += " 🛟 稳定备用"
-		}
-
-		groups = append(groups, ClashProxyGroup{
-			Name:     proxyGroupName,
-			Type:     "load-balance",
+		urlTestGroup := ClashProxyGroup{
+			Name:     groupName + " 🛟 稳定备用1",
+			Type:     "url-test",
 			Proxies:  proxyNames,
 			URL:      "https://www.gstatic.com/generate_204",
 			Interval: 300,
 			Lazy:     true,
-			Strategy: "round-robin", // 显式设置为 round-robin
-		})
+		}
+		loadBalanceGroup := urlTestGroup
+		loadBalanceGroup.Name = groupName + " 🛟 稳定备用2"
+		loadBalanceGroup.Type = "load-balance"
+		loadBalanceGroup.Strategy = "round-robin"
 
-		// load-balance 组加入手动切换
-		topLevelProxies = append(topLevelProxies, proxyGroupName)
+		groups = append(groups, urlTestGroup, loadBalanceGroup)
+		topLevelProxies = append(topLevelProxies, urlTestGroup.Name, loadBalanceGroup.Name)
 	}
 
 	// 更新 "手动切换" 组的 proxies

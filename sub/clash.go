@@ -15,7 +15,6 @@ type ClashConfig struct {
 	UnifiedDelay       bool                         `yaml:"unified-delay"`
 	TCPConcurrent      bool                         `yaml:"tcp-concurrent"`
 	Profile            ClashProfile                 `yaml:"profile,omitempty"`
-	DNS                ClashDNS                     `yaml:"dns,omitempty"`
 	Proxies            []ClashProxy                 `yaml:"proxies"`
 	ProxyGroups        []ClashProxyGroup            `yaml:"proxy-groups"`
 	RuleProviders      map[string]ClashRuleProvider `yaml:"rule-providers"`
@@ -27,24 +26,6 @@ type ClashProfile struct {
 	StoreSelected bool `yaml:"store-selected,omitempty"` // 存储选择的节点
 	Tracing       bool `yaml:"tracing,omitempty"`        // 追踪模式
 	Interval      int  `yaml:"interval,omitempty"`       // 自动更新间隔（小时）
-}
-
-// DNS 配置
-type ClashDNS struct {
-	Enable         bool                `yaml:"enable"`
-	IPv6           bool                `yaml:"ipv6"`
-	EnhancedMode   string              `yaml:"enhanced-mode"`
-	FakeIPRange    string              `yaml:"fake-ip-range"`
-	Nameserver     []string            `yaml:"nameserver"`
-	Fallback       []string            `yaml:"fallback,omitempty"`
-	FallbackFilter ClashFallbackFilter `yaml:"fallback-filter,omitempty"`
-}
-
-// Clash DNS Fallback-Filter 配置
-type ClashFallbackFilter struct {
-	GeoIP     bool     `yaml:"geoip"`
-	GeoIPCode string   `yaml:"geoip-code"`
-	IPCIDR    []string `yaml:"ipcidr"`
 }
 
 // Clash 代理节点
@@ -72,7 +53,7 @@ type ClashWSOptions struct {
 // 代理组
 type ClashProxyGroup struct {
 	Name     string   `yaml:"name"`
-	Type     string   `yaml:"type"` // select, load-balance
+	Type     string   `yaml:"type"` // select, url-test, load-balance
 	Proxies  []string `yaml:"proxies"`
 	URL      string   `yaml:"url,omitempty"`
 	Interval int      `yaml:"interval,omitempty"`
@@ -123,40 +104,6 @@ func (c *ClashConfig) ToYAML() string {
 	sb.WriteString(fmt.Sprintf("external-controller: '%s'\n", c.ExternalController))
 	sb.WriteString(fmt.Sprintf("unified-delay: %t\n", c.UnifiedDelay))
 	sb.WriteString(fmt.Sprintf("tcp-concurrent: %t\n", c.TCPConcurrent))
-
-	// DNS 配置
-	if c.DNS.Enable {
-		sb.WriteString("\ndns:\n")
-		sb.WriteString("  enable: true\n")
-		sb.WriteString(fmt.Sprintf("  ipv6: %t\n", c.DNS.IPv6))
-		sb.WriteString(fmt.Sprintf("  enhanced-mode: %s\n", c.DNS.EnhancedMode))
-		if c.DNS.FakeIPRange != "" {
-			sb.WriteString(fmt.Sprintf("  fake-ip-range: %s\n", c.DNS.FakeIPRange))
-		}
-		sb.WriteString("  nameserver:\n")
-		for _, ns := range c.DNS.Nameserver {
-			sb.WriteString(fmt.Sprintf("    - %s\n", ns))
-		}
-		if len(c.DNS.Fallback) > 0 {
-			sb.WriteString("  fallback:\n")
-			for _, fb := range c.DNS.Fallback {
-				sb.WriteString(fmt.Sprintf("    - %s\n", fb))
-			}
-		}
-		if c.DNS.FallbackFilter.GeoIP || c.DNS.FallbackFilter.GeoIPCode != "" || len(c.DNS.FallbackFilter.IPCIDR) > 0 {
-			sb.WriteString("  fallback-filter:\n")
-			sb.WriteString(fmt.Sprintf("    geoip: %t\n", c.DNS.FallbackFilter.GeoIP))
-			if c.DNS.FallbackFilter.GeoIPCode != "" {
-				sb.WriteString(fmt.Sprintf("    geoip-code: %s\n", c.DNS.FallbackFilter.GeoIPCode))
-			}
-			if len(c.DNS.FallbackFilter.IPCIDR) > 0 {
-				sb.WriteString("    ipcidr:\n")
-				for _, cidr := range c.DNS.FallbackFilter.IPCIDR {
-					sb.WriteString(fmt.Sprintf("      - %s\n", cidr))
-				}
-			}
-		}
-	}
 
 	// Profile配置（自动更新间隔等）
 	if c.Profile.StoreSelected || c.Profile.Tracing || c.Profile.Interval > 0 {
