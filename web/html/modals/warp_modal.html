@@ -80,15 +80,15 @@
             <a-divider :style="{ margin: '10px 0' }">{{ i18n "pages.xray.outbound.outboundStatus" }}</a-divider>
             <a-form :label-col="{ md: {span:8} }" :wrapper-col="{ md: {span:14} }">
                 <template v-if="warpOutboundIndex>=0">
-                    <a-tag color="green" :style="{ lineHeight: '31px' }">{{ i18n "enabled" }}</a-tag>
-                    <a-button @click="resetOutbound" :loading="warpModal.confirmLoading" type="danger">{{ i18n "reset" }}</a-button>
+                    <a-tag color="blue" :style="{ lineHeight: '31px' }">{{ i18n "pages.xray.outbound.warpConfigured" }}</a-tag>
+                    <a-button @click="resetOutbound" :disabled="!warpModal.warpOutbound" :loading="warpModal.confirmLoading" type="danger">{{ i18n "reset" }}</a-button>
                 </template>
                 <template v-else>
                     <a-tag color="orange" :style="{ lineHeight: '31px' }">{{ i18n "disabled" }}</a-tag>
-                    <a-button @click="addOutbound" :loading="warpModal.confirmLoading" type="primary">{{ i18n "pages.xray.outbound.addOutbound" }}</a-button>
+                    <a-button @click="addOutbound" :disabled="!warpModal.warpOutbound" :loading="warpModal.confirmLoading" type="primary">{{ i18n "pages.xray.outbound.addOutbound" }}</a-button>
                 </template>
-                </a-form-item>
             </a-form>
+            <p>{{ i18n "pages.xray.outbound.warpConnectivityNote" }}</p>
         </template>
     </template>
 </a-modal>
@@ -103,6 +103,7 @@
         show() {
             this.visible = true;
             this.warpConfig = null;
+            this.warpOutbound = null;
             this.getData();
         },
         close() {
@@ -114,10 +115,15 @@
         },
         async getData() {
             this.loading(true);
-            const msg = await HttpUtil.post('/panel/xray/warp/data');
-            this.loading(false);
-            if (msg.success) {
-                this.warpData = msg.obj.length > 0 ? JSON.parse(msg.obj) : null;
+            try {
+                const msg = await HttpUtil.post('/panel/xray/warp/data');
+                if (msg.success) {
+                    this.warpData = msg.obj ? JSON.parse(msg.obj) : null;
+                }
+            } catch {
+                Vue.prototype.$message.error('{{ i18n "pages.xray.outbound.warpInvalidConfig" }}');
+            } finally {
+                this.loading(false);
             }
         },
     };
@@ -131,28 +137,32 @@
         },
         methods: {
             collectConfig() {
-                config = warpModal.warpConfig.config;
-                peer = config.peers[0];
-                if (config) {
-                    warpModal.warpOutbound = Outbound.fromJson({
-                        tag: 'warp',
-                        protocol: Protocols.Wireguard,
-                        settings: {
-                            mtu: 1420,
-                            secretKey: warpModal.warpData.private_key,
-                            address: this.getAddresses(config.interface.addresses),
-                            reserved: this.getResolved(config.client_id),
-                            workers: 2,
-                            domainStrategy: 'ForceIPv6v4',
-                            peers: [{
-                                publicKey: peer.public_key,
-                                endpoint: '162.159.192.1:500',
-                                keepAlive: 30,
-                            }],
-                            noKernelTun: true,
-                        }
-                    });
+                warpModal.warpOutbound = null;
+                const config = warpModal.warpConfig?.config;
+                const peer = config?.peers?.[0];
+                const addresses = config?.interface?.addresses;
+                const privateKey = warpModal.warpData?.private_key;
+                if (!privateKey || !peer?.public_key || !(addresses?.v4 || addresses?.v6)) {
+                    throw new Error('Incomplete WARP configuration');
                 }
+                warpModal.warpOutbound = Outbound.fromJson({
+                    tag: 'warp',
+                    protocol: Protocols.Wireguard,
+                    settings: {
+                        mtu: 1420,
+                        secretKey: privateKey,
+                        address: this.getAddresses(addresses),
+                        reserved: this.getResolved(config.client_id),
+                        workers: 2,
+                        domainStrategy: 'ForceIPv6v4',
+                        peers: [{
+                            publicKey: peer.public_key,
+                            endpoint: '162.159.192.1:500',
+                            keepAlive: 30,
+                        }],
+                        noKernelTun: true,
+                    }
+                });
             },
             getAddresses(addrs) {
                 let addresses = [];
@@ -161,32 +171,30 @@
                 return addresses;
             },
             getResolved(client_id) {
-                let reserved = [];
-                let decoded = atob(client_id);
-                let hexString = '';
-                for (let i = 0; i < decoded.length; i++) {
-                    let hex = decoded.charCodeAt(i).toString(16);
-                    hexString += (hex.length === 1 ? '0' : '') + hex;
+                const decoded = atob(client_id);
+                if (decoded.length !== 3) {
+                    throw new Error('Invalid WARP client ID');
                 }
-
-                for (let i = 0; i < hexString.length; i += 2) {
-                    let hexByte = hexString.slice(i, i + 2);
-                    let decValue = parseInt(hexByte, 16);
-                    reserved.push(decValue);
-                }
-                return reserved;
+                return Array.from(decoded, byte => byte.charCodeAt(0));
             },
             async register() {
                 warpModal.loading(true);
-                const keys = Wireguard.generateKeypair();
-                const msg = await HttpUtil.post('/panel/xray/warp/reg', keys);
-                if (msg.success) {
-                    const resp = JSON.parse(msg.obj);
-                    warpModal.warpData = resp.data;
-                    warpModal.warpConfig = resp.config;
-                    this.collectConfig();
+                try {
+                    const keys = Wireguard.generateKeypair();
+                    const msg = await HttpUtil.post('/panel/xray/warp/reg', keys);
+                    if (msg.success) {
+                        const resp = JSON.parse(msg.obj);
+                        warpModal.warpData = resp.data;
+                        warpModal.warpConfig = resp.config;
+                        this.collectConfig();
+                    }
+                } catch {
+                    warpModal.warpConfig = null;
+                    warpModal.warpOutbound = null;
+                    this.$message.error('{{ i18n "pages.xray.outbound.warpInvalidConfig" }}');
+                } finally {
+                    warpModal.loading(false);
                 }
-                warpModal.loading(false);
             },
             async updateLicense(l) {
                 warpModal.loading(true);
@@ -200,11 +208,20 @@
             },
             async getConfig() {
                 warpModal.loading(true);
-                const msg = await HttpUtil.post('/panel/xray/warp/config');
-                warpModal.loading(false);
-                if (msg.success) {
-                    warpModal.warpConfig = JSON.parse(msg.obj);
-                    this.collectConfig();
+                warpModal.warpConfig = null;
+                warpModal.warpOutbound = null;
+                try {
+                    const msg = await HttpUtil.post('/panel/xray/warp/config');
+                    if (msg.success) {
+                        warpModal.warpConfig = JSON.parse(msg.obj);
+                        this.collectConfig();
+                    }
+                } catch {
+                    warpModal.warpConfig = null;
+                    warpModal.warpOutbound = null;
+                    this.$message.error('{{ i18n "pages.xray.outbound.warpInvalidConfig" }}');
+                } finally {
+                    warpModal.loading(false);
                 }
             },
             async delConfig() {
@@ -218,11 +235,13 @@
                 }
             },
             addOutbound() {
+                if (!warpModal.warpOutbound || this.warpOutboundIndex >= 0) return;
                 app.templateSettings.outbounds.push(warpModal.warpOutbound.toJson());
                 app.outboundSettings = JSON.stringify(app.templateSettings.outbounds);
                 warpModal.close();
             },
             resetOutbound() {
+                if (!warpModal.warpOutbound || this.warpOutboundIndex < 0) return;
                 app.templateSettings.outbounds[this.warpOutboundIndex] = warpModal.warpOutbound.toJson();
                 app.outboundSettings = JSON.stringify(app.templateSettings.outbounds);
                 warpModal.close();

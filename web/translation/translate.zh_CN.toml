@@ -522,6 +522,9 @@
 "settings" = "设置"
 "accountInfo" = "帐户信息"
 "outboundStatus" = "出站状态"
+"warpConfigured" = "已配置"
+"warpConnectivityNote" = "已配置仅表示出站已添加，不代表隧道可用。保存并应用后，请从匹配此出站的节点验证 WARP 连通性。"
+"warpInvalidConfig" = "WARP 配置无效，未修改出站。"
 "sendThrough" = "发送通过"
 
 [pages.xray.balancer]

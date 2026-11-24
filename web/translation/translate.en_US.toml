@@ -522,6 +522,9 @@
 "settings" = "Settings"
 "accountInfo" = "Account Information"
 "outboundStatus" = "Outbound Status"
+"warpConfigured" = "Configured"
+"warpConnectivityNote" = "Configured means the outbound has been added, not that the tunnel is reachable. After saving and applying, test WARP through a node routed to this outbound."
+"warpInvalidConfig" = "Invalid WARP configuration. The outbound was not changed."
 "sendThrough" = "Send Through"
 
 [pages.xray.balancer]
