@@ -5,30 +5,30 @@ import (
 	"testing"
 )
 
-func TestClashDefaultIPRulesDoNotResolve(t *testing.T) {
+func TestClashDefaultRulesResolveChinaIPBeforeFallback(t *testing.T) {
 	s := &ClashService{}
 	rules := s.generateRules("DOMAIN,custom.example,DIRECT", "")
-	telegram, china := -1, -1
-	for i, rule := range rules {
-		if strings.HasPrefix(rule, "IP-CIDR") || strings.HasPrefix(rule, "GEOIP,") ||
-			strings.HasPrefix(rule, "RULE-SET,lancidr,") || strings.HasPrefix(rule, "RULE-SET,cncidr,") ||
-			strings.HasPrefix(rule, "RULE-SET,telegramcidr,") {
-			if !strings.HasSuffix(rule, ",no-resolve") {
-				t.Errorf("IP rule triggers DNS: %s", rule)
-			}
-		}
-		if strings.HasPrefix(rule, "RULE-SET,telegramcidr,") {
-			telegram = i
-		}
-		if strings.HasPrefix(rule, "RULE-SET,cncidr,") {
-			china = i
+	wantTail := []string{
+		"RULE-SET,google,🚀 手动切换",
+		"RULE-SET,proxy,🚀 手动切换",
+		"RULE-SET,direct,DIRECT",
+		"RULE-SET,lancidr,DIRECT,no-resolve",
+		"RULE-SET,telegramcidr,🚀 手动切换,no-resolve",
+		"RULE-SET,cncidr,DIRECT",
+		"GEOIP,LAN,DIRECT,no-resolve",
+		"GEOIP,CN,DIRECT",
+		"MATCH,🎯 兜底规则",
+	}
+	if len(rules) < len(wantTail) || strings.Join(rules[len(rules)-len(wantTail):], "\n") != strings.Join(wantTail, "\n") {
+		t.Fatalf("unexpected default rule order or DNS resolution policy: %v", rules)
+	}
+	for _, rule := range rules {
+		if strings.HasPrefix(rule, "IP-CIDR") && !strings.HasSuffix(rule, ",no-resolve") {
+			t.Errorf("fixed CIDR exception must not trigger DNS: %s", rule)
 		}
 	}
-	if telegram < 0 || china < 0 || telegram > china {
-		t.Fatal("Telegram rule must precede country IP rules")
-	}
-	if rules[9] != "DOMAIN,custom.example,DIRECT" || rules[len(rules)-1] != "MATCH,🎯 兜底规则" {
-		t.Fatal("custom insertion or final fallback changed")
+	if rules[9] != "DOMAIN,custom.example,DIRECT" {
+		t.Fatal("custom insertion changed")
 	}
 }
 

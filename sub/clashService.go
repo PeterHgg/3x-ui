@@ -513,9 +513,9 @@ func (s *ClashService) generateRules(customRules string, fullRules string) []str
 		"RULE-SET,direct,DIRECT",
 		"RULE-SET,lancidr,DIRECT,no-resolve",
 		"RULE-SET,telegramcidr,🚀 手动切换,no-resolve",
-		"RULE-SET,cncidr,DIRECT,no-resolve",
+		"RULE-SET,cncidr,DIRECT",
 		"GEOIP,LAN,DIRECT,no-resolve",
-		"GEOIP,CN,DIRECT,no-resolve",
+		"GEOIP,CN,DIRECT",
 		"MATCH,🎯 兜底规则",
 	)
 
